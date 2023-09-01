@@ -10,6 +10,6 @@ type Response struct {
 func errEmpty(field string) *Response {
 	return &Response{
 		Code:   400,
-		Status: fmt.Sprintf("%s is empty",field),
+		Status: fmt.Sprintf("%s is empty", field),
 	}
 }
