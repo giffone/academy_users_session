@@ -9,6 +9,24 @@ type Session struct {
 	DateTime     int    `json:"date_time" db:"date_time"`
 }
 
-func (s *Session) validate() error {
+func (s *Session) validate() *Response {
+	if s.ID == "" {
+		return errEmpty("id")
+	}
+	if s.ComputerName == "" {
+		return errEmpty("comp_name")
+	}
+	if s.IPAddress == "" {
+		return errEmpty("ip")
+	}
+	if s.Login == "" {
+		return errEmpty("login")
+	}
+	if s.Status == "" {
+		return errEmpty("status")
+	}
+	if s.DateTime == 0 {
+		return errEmpty("date_time")
+	}
 	return nil
 }
