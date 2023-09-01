@@ -30,3 +30,5 @@ func (s *Session) validate() *Response {
 	}
 	return nil
 }
+
+type Sessions []Session
