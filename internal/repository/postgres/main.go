@@ -8,14 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func newStorage() *pgxpool.Pool {
-	// return nil
+func NewPostgres() *pgxpool.Pool {
 	ctx := context.Background()
 	log.Println("[postgres-pool] init...")
 
-	// connStr = "user=postgres password=postgres port=5432 dbname=postgres sslmode=disable"
+	connStr := os.Getenv("DATABASE_URL")
 
-	pg, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	if connStr == "" {
+		log.Fatalf("[postgres-pool] connection string is empty")
+	}
+	
+	pg, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		log.Fatalf("[postgres-pool] init error: %s", err)
 	}

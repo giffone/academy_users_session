@@ -31,4 +31,19 @@ func (s *Session) validate() *Response {
 	return nil
 }
 
+type PingSession struct {
+	SessionID string `json:"session_id" db:"session_id"`
+	DateTime  int    `json:"date_time" db:"date_time"`
+}
+
+func (ps *PingSession) validate() *Response {
+	if ps.SessionID == "" {
+		return errEmpty("session_id")
+	}
+	if ps.DateTime == 0 {
+		return errEmpty("date_time")
+	}
+	return nil
+}
+
 type Sessions []Session
