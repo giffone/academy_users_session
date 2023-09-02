@@ -2,7 +2,7 @@ CREATE OR REPLACE FUNCTION delete_old_sessions()
 RETURNS TRIGGER AS $$
 BEGIN
     DELETE FROM sessions_last
-    WHERE date_time < EXTRACT(EPOCH FROM NOW() - INTERVAL '10 minutes');
+    WHERE date_time < (NOW() - INTERVAL '10 minutes');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

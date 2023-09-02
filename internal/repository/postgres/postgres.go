@@ -24,13 +24,15 @@ type storage struct {
 }
 
 var (
-	createSessionQuery = `INSERT INTO sessions 
-	(id, comp_name, ip_addr, login, date_time, createdAt) 
+	createSessionQuery = `INSERT INTO sessions (id, comp_name, ip_addr, login, date_time, createdAt) 
 	VALUES ($1, $2, $3, $4, $5, $6)`
 
-	pingSessionQuery = `INSERT INTO sessions_ping 
-	(session_id, date_time, createdAt) 
-	VALUES ($1, $2, $3)`
+	pingSessionQuery = `INSERT INTO sessions_ping (session_id, session_type, date_time, createdAt)
+	VALUES ($1, $2, $3, $4)
+	ON CONFLICT (session_id)
+	DO UPDATE SET
+		date_time = EXCLUDED.date_time
+		updatedAt = current_timestamp;`
 
 	onlineSessionsQuery = `SELECT s.comp_name, s.ip_addr, s.login, s.date_time AS started_at, sp.date_time AS updated_in
 	FROM sessions s
