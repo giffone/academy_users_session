@@ -25,12 +25,17 @@ type storage struct {
 
 var (
 	createSessionQuery = `INSERT INTO sessions 
-	(id, comp_name, ip_addr, login, status, date_time, createdAt) 
-	VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	(id, comp_name, ip_addr, login, date_time, createdAt) 
+	VALUES ($1, $2, $3, $4, $5, $6)`
 
 	pingSessionQuery = `INSERT INTO sessions_ping 
 	(session_id, date_time, createdAt) 
 	VALUES ($1, $2, $3)`
+
+	onlineSessionsQuery = `SELECT s.comp_name, s.ip_addr, s.login, s.date_time AS started_at, sp.date_time AS updated_in
+	FROM sessions s
+	INNER JOIN sessions_ping sp ON s.id = sp.id
+	WHERE`
 )
 
 func (s *storage) CreateSession(ctx context.Context, sess *domain.Session) error {
