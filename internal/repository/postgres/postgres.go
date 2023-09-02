@@ -24,39 +24,53 @@ type storage struct {
 }
 
 var (
-	createSessionQuery = `INSERT INTO sessions (id, comp_name, ip_addr, login, date_time, createdAt) 
-	VALUES ($1, $2, $3, $4, $5, $6)`
+	createSessionQuery = `INSERT INTO sessions (id, comp_name, ip_addr, login, date_time) 
+	VALUES ($1, $2, $3, $4, $5);`
 
-	pingSessionQuery = `INSERT INTO sessions_ping (session_id, session_type, date_time, createdAt)
-	VALUES ($1, $2, $3, $4)
-	ON CONFLICT (session_id)
+	pingSessionQuery = `INSERT INTO sessions_ping (session_id, session_type, date_time)
+	VALUES ($1, $2, $3)
+	ON CONFLICT (session_id, session_type)
 	DO UPDATE SET
 		date_time = EXCLUDED.date_time
 		updatedAt = current_timestamp;`
 
-	onlineSessionsQuery = `SELECT s.comp_name, s.ip_addr, s.login, s.date_time AS started_at, sp.date_time AS updated_in
-	FROM sessions s
-	INNER JOIN sessions_ping sp ON s.id = sp.id
-	WHERE`
+	lastSessionQuery = `INSERT INTO sessions_last (id, comp_name, ip_addr, login, date_time)
+	VALUES ($1, $2, $3, $4, $5)
+	ON CONFLICT (comp_name)
+	DO UPDATE SET
+		session_id = EXCLUDED.session_id,
+		ip_addr = EXCLUDED.ip_addr,
+		login = EXCLUDED.login,
+		date_time = EXCLUDED.date_time;`
+
+	onlineSessionsQuery = `SELECT id, comp_name, ip_addr, login, date_time
+	FROM sessions_last;`
 )
 
 func (s *storage) CreateSession(ctx context.Context, sess *domain.Session) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err := s.pool.Exec(ctx, createSessionQuery,
+	if _, err := s.pool.Exec(ctx, createSessionQuery,
 		sess.ID,
 		sess.ComputerName,
 		sess.IPAddress,
 		sess.Login,
-		sess.Status,
 		sess.DateTime,
-		time.Now(),
-	)
-
-	if err != nil {
-		return fmt.Errorf("CreateSession: %w", err)
+	); err != nil {
+		return err
 	}
+
+	if _, err := s.pool.Exec(ctx, lastSessionQuery,
+		sess.ID,
+		sess.ComputerName,
+		sess.IPAddress,
+		sess.Login,
+		sess.DateTime,
+	); err != nil {
+		return fmt.Errorf("last: %w", err)
+	}
+
 	return nil
 }
 
@@ -64,18 +78,56 @@ func (s *storage) PingSession(ctx context.Context, ps *domain.PingSession) error
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err := s.pool.Exec(ctx, pingSessionQuery,
+	if _, err := s.pool.Exec(ctx, pingSessionQuery,
 		ps.SessionID,
+		ps.SessionType,
 		ps.DateTime,
-		time.Now(),
-	)
-
-	if err != nil {
-		return fmt.Errorf("PingSession: %w", err)
+	); err != nil {
+		return err
 	}
+
+	if _, err := s.pool.Exec(ctx, lastSessionQuery,
+		ps.SessionID,
+		ps.ComputerName,
+		ps.IPAddress,
+		ps.Login,
+		ps.DateTime,
+	); err != nil {
+		return fmt.Errorf("last: %w", err)
+	}
+
 	return nil
 }
 
 func (s *storage) GetOnlineSessions(ctx context.Context) (domain.Sessions, error) {
-	return nil, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, onlineSessionsQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := make(domain.Sessions, 0, 250)
+
+	for rows.Next() {
+		s := domain.Session{}
+		if err := rows.Scan(
+			&s.ID,
+			&s.ComputerName,
+			&s.IPAddress,
+			&s.Login,
+			&s.DateTime,
+		); err != nil {
+			return nil, fmt.Errorf("iterate row: %w", err)
+		}
+		sessions = append(sessions, s)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows all: %w", err)
+	}
+
+	return sessions, nil
 }
