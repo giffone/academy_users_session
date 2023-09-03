@@ -7,7 +7,7 @@ type Session struct {
 	ComputerName string    `db:"comp_name"`
 	IPAddress    string    `db:"ip_addr"`
 	Login        string    `db:"login"`
-	NextPingDate time.Time `db:"next_ping_date"`
+	DateTime     time.Time `db:"date_time"`
 }
 
 // type PingSession struct {

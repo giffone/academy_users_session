@@ -2,7 +2,7 @@ CREATE OR REPLACE FUNCTION delete_old_sessions()
 RETURNS TRIGGER AS $$
 BEGIN
     DELETE FROM online_dashboard
-    WHERE next_ping_date < (NOW() - INTERVAL '12 hours');
+    WHERE date_time < (NOW() - INTERVAL '12 hours');
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;

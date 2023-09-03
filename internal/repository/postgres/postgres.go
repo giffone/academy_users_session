@@ -26,42 +26,50 @@ type storage struct {
 	pool *pgxpool.Pool
 }
 
-var (
+const (
+	zeroStart  = "zero start"
+	zeroEnd    = "zero end"
+
 	createSessionQuery = `INSERT INTO sessions (id, comp_name, ip_addr, login, next_ping_sec, date_time) 
 	VALUES ($1, $2, $3, $4, $5, $6);`
 
-	pingSessionQuery = `INSERT INTO sessions_ping (session_id, session_type, next_ping_date)
+	pingSessionQuery = `INSERT INTO sessions_ping (session_id, session_type, date_time)
 	VALUES ($1, $2, $3)
 	ON CONFLICT (session_id, session_type)
 	DO UPDATE SET
-		next_ping_date = EXCLUDED.next_ping_date,
-		updated = current_timestamp;`
+		date_time = EXCLUDED.date_time;`
 
-	createOnlineSessionQuery = `INSERT INTO online_dashboard (session_id, comp_name, ip_addr, login, next_ping_date)
+	createOnlineSessionQuery = `INSERT INTO online_dashboard (session_id, comp_name, ip_addr, login, date_time)
 	VALUES ($1, $2, $3, $4, $5)
 	ON CONFLICT (comp_name)
 	DO UPDATE SET
 		session_id = EXCLUDED.session_id,
 		ip_addr = EXCLUDED.ip_addr,
 		login = EXCLUDED.login,
-		next_ping_date = EXCLUDED.next_ping_date
-		updated = current_timestamp;`
+		date_time = EXCLUDED.date_time;`
 
-	onlineDashboardQuery = `SELECT session_id, comp_name, ip_addr, login, next_ping_date
+	onlineDashboardQuery = `SELECT session_id, comp_name, ip_addr, login, date_time
 	FROM online_dashboard;`
 
-	isOnlineSessionQuery = `SELECT session_id, comp_name, ip_addr, login, next_ping_date
+	isOnlineSessionQuery = `SELECT session_id, comp_name, ip_addr, login, date_time
 	FROM online_dashboard
 	WHERE comp_name = $1
 	AND login = $2
-	AND next_ping_date >= NOW();`
+	AND date_time >= NOW();`
 )
 
 func (s *storage) CreateSession(ctx context.Context, req *request.Session) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	if _, err := s.pool.Exec(ctx, createSessionQuery,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// start session
+	if _, err := tx.Exec(ctx, createSessionQuery,
 		req.ID,
 		req.ComputerName,
 		req.IPAddress,
@@ -69,11 +77,11 @@ func (s *storage) CreateSession(ctx context.Context, req *request.Session) error
 		req.NextPingSeconds,
 		req.DateTime,
 	); err != nil {
-		return err
+		return fmt.Errorf("start session: %w", err)
 	}
 
 	// put in online dashboard
-	if _, err := s.pool.Exec(ctx, createOnlineSessionQuery,
+	if _, err := tx.Exec(ctx, createOnlineSessionQuery,
 		req.ID,
 		req.ComputerName,
 		req.IPAddress,
@@ -83,19 +91,24 @@ func (s *storage) CreateSession(ctx context.Context, req *request.Session) error
 		return fmt.Errorf("online dashboard: %w", err)
 	}
 
+	err = tx.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
 	return nil
 }
 
 func (s *storage) PingSession(ctx context.Context, req *request.PingSession) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	till := req.DateTime.Add(time.Duration(req.NextPingSeconds)*time.Second)
+	endDate := req.DateTime.Add(time.Duration(req.NextPingSeconds) * time.Second)
 
 	if _, err := s.pool.Exec(ctx, pingSessionQuery,
 		req.SessionID,
 		req.SessionType,
-		till,
+		endDate,
 	); err != nil {
 		return err
 	}
@@ -106,7 +119,7 @@ func (s *storage) PingSession(ctx context.Context, req *request.PingSession) err
 		req.ComputerName,
 		req.IPAddress,
 		req.Login,
-		till,
+		endDate,
 	); err != nil {
 		return fmt.Errorf("online dashboard: %w", err)
 	}
@@ -115,7 +128,7 @@ func (s *storage) PingSession(ctx context.Context, req *request.PingSession) err
 }
 
 func (s *storage) GetOnlineDashboard(ctx context.Context) ([]domain.Session, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	rows, err := s.pool.Query(ctx, onlineDashboardQuery)
@@ -133,7 +146,7 @@ func (s *storage) GetOnlineDashboard(ctx context.Context) ([]domain.Session, err
 			&s.ComputerName,
 			&s.IPAddress,
 			&s.Login,
-			&s.NextPingDate,
+			&s.DateTime,
 		); err != nil {
 			return nil, fmt.Errorf("iterate row: %w", err)
 		}
@@ -148,7 +161,7 @@ func (s *storage) GetOnlineDashboard(ctx context.Context) ([]domain.Session, err
 }
 
 func (s *storage) IsSessionExists(ctx context.Context, comp_name, login string) (*domain.Session, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	var session domain.Session
