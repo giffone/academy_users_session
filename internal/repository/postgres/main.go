@@ -16,7 +16,7 @@ func NewPostgres(ctx context.Context) *pgxpool.Pool {
 	if connStr == "" {
 		log.Fatalf("[postgres-pool] connection string is empty")
 	}
-	
+
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		log.Fatalf("[postgres-pool] init error: %s", err)
@@ -34,10 +34,9 @@ func NewPostgres(ctx context.Context) *pgxpool.Pool {
 	log.Println("[postgres-pool] init done")
 
 	log.Println("[postgres-pool] set time zone: Asia/Almaty")
-	_, err = pool.Exec(ctx, "SET TIME ZONE 'Asia/Almaty'")
-    if err != nil {
-        log.Fatalf("[postgres-pool] set time zone error: %s", err)
-    }
+	if _, err = pool.Exec(ctx, "SET TIME ZONE 'Asia/Almaty'"); err != nil {
+		log.Fatalf("[postgres-pool] set time zone error: %s", err)
+	}
 
 	return pool
 }

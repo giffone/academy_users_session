@@ -1,11 +1,14 @@
 package service
 
-import "session_manager/internal/domain"
+import (
+	"session_manager/internal/domain"
+	"session_manager/internal/domain/request"
+)
 
 type Service interface {
-	CreateSession(sess *domain.Session) error
-	UpdateSession(sess *domain.Session) error
-	GetOnlineSessions() (domain.Sessions, error)
+	CreateSession(sess *request.Session) error
+	UpdateSession(sess *request.Session) error
+	GetOnlineSessions() ([]domain.Session, error)
 }
 
 func New() Service {
@@ -15,14 +18,14 @@ func New() Service {
 type service struct {
 }
 
-func (s *service) CreateSession(sess *domain.Session) error {
+func (s *service) CreateSession(sess *request.Session) error {
 	return nil
 }
 
-func (s *service) UpdateSession(sess *domain.Session) error {
+func (s *service) UpdateSession(sess *request.Session) error {
 	return nil
 }
 
-func (s *service) GetOnlineSessions() (domain.Sessions, error) {
+func (s *service) GetOnlineSessions() ([]domain.Session, error) {
 	return nil, nil
 }
