@@ -13,7 +13,7 @@ import (
 
 type Storage interface {
 	CreateSession(ctx context.Context, sess *request.Session) error
-	PingSession(ctx context.Context, ps *domain.PingSession) error
+	PingSession(ctx context.Context, ps *request.PingSession) error
 	GetOnlineDashboard(ctx context.Context) ([]domain.Session, error)
 	IsSessionExists(ctx context.Context, comp_name, login string) (*domain.Session, error)
 }
@@ -57,28 +57,28 @@ var (
 	AND next_ping_date >= NOW();`
 )
 
-func (s *storage) CreateSession(ctx context.Context, sess *request.Session) error {
+func (s *storage) CreateSession(ctx context.Context, req *request.Session) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if _, err := s.pool.Exec(ctx, createSessionQuery,
-		sess.ID,
-		sess.ComputerName,
-		sess.IPAddress,
-		sess.Login,
-		sess.NextPingSeconds,
-		sess.DateTime,
+		req.ID,
+		req.ComputerName,
+		req.IPAddress,
+		req.Login,
+		req.NextPingSeconds,
+		req.DateTime,
 	); err != nil {
 		return err
 	}
 
 	// put in online dashboard
 	if _, err := s.pool.Exec(ctx, createOnlineSessionQuery,
-		sess.ID,
-		sess.ComputerName,
-		sess.IPAddress,
-		sess.Login,
-		sess.DateTime,
+		req.ID,
+		req.ComputerName,
+		req.IPAddress,
+		req.Login,
+		req.DateTime.Add(time.Duration(req.NextPingSeconds)*time.Second),
 	); err != nil {
 		return fmt.Errorf("online dashboard: %w", err)
 	}
@@ -86,25 +86,27 @@ func (s *storage) CreateSession(ctx context.Context, sess *request.Session) erro
 	return nil
 }
 
-func (s *storage) PingSession(ctx context.Context, ps *domain.PingSession) error {
+func (s *storage) PingSession(ctx context.Context, req *request.PingSession) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	till := req.DateTime.Add(time.Duration(req.NextPingSeconds)*time.Second)
+
 	if _, err := s.pool.Exec(ctx, pingSessionQuery,
-		ps.SessionID,
-		ps.SessionType,
-		ps.NextPingDate,
+		req.SessionID,
+		req.SessionType,
+		till,
 	); err != nil {
 		return err
 	}
 
 	// put in online dashboard
 	if _, err := s.pool.Exec(ctx, createOnlineSessionQuery,
-		ps.SessionID,
-		ps.ComputerName,
-		ps.IPAddress,
-		ps.Login,
-		ps.NextPingDate,
+		req.SessionID,
+		req.ComputerName,
+		req.IPAddress,
+		req.Login,
+		till,
 	); err != nil {
 		return fmt.Errorf("online dashboard: %w", err)
 	}
