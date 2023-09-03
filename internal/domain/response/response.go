@@ -1,6 +1,7 @@
 package response
 
 import (
+	"errors"
 	"fmt"
 	"session_manager/internal/domain"
 )
@@ -17,3 +18,5 @@ func ErrEmpty(field string) *Data {
 		Status: fmt.Sprintf("%s is empty", field),
 	}
 }
+
+var ErrAccessDenied = errors.New("access denied")

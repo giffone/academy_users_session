@@ -7,6 +7,7 @@ import (
 	"session_manager/internal/domain/request"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -14,7 +15,7 @@ type Storage interface {
 	CreateSession(ctx context.Context, sess *request.Session) error
 	PingSession(ctx context.Context, ps *domain.PingSession) error
 	GetOnlineDashboard(ctx context.Context) ([]domain.Session, error)
-	IsOnlineSession(ctx context.Context, comp_name, login string) (bool, error)
+	IsSessionExists(ctx context.Context, comp_name, login string) (*domain.Session, error)
 }
 
 func NewStorage(pool *pgxpool.Pool) Storage {
@@ -49,13 +50,11 @@ var (
 	onlineDashboardQuery = `SELECT session_id, comp_name, ip_addr, login, next_ping_date
 	FROM online_dashboard;`
 
-	isOnlineSessionQuery = `SELECT EXISTS (
-		SELECT 1
-		FROM online_dashboard
-		WHERE comp_name = $1
-		AND login = $2
-		AND next_ping_date >= NOW()
-	) AS is_online;`
+	isOnlineSessionQuery = `SELECT session_id, comp_name, ip_addr, login, next_ping_date
+	FROM online_dashboard
+	WHERE comp_name = $1
+	AND login = $2
+	AND next_ping_date >= NOW();`
 )
 
 func (s *storage) CreateSession(ctx context.Context, sess *request.Session) error {
@@ -146,18 +145,21 @@ func (s *storage) GetOnlineDashboard(ctx context.Context) ([]domain.Session, err
 	return sessions, nil
 }
 
-func (s *storage) IsOnlineSession(ctx context.Context, comp_name, login string) (bool, error) {
+func (s *storage) IsSessionExists(ctx context.Context, comp_name, login string) (*domain.Session, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var isOnline bool
+	var session domain.Session
 
 	if err := s.pool.QueryRow(ctx, isOnlineSessionQuery,
 		comp_name,
 		login,
-	).Scan(&isOnline); err != nil {
-		return false, err
+	).Scan(&session); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
 	}
 
-	return isOnline, nil
+	return &session, nil
 }
