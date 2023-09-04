@@ -8,4 +8,4 @@ migrate:
 
 docker: migrate
     docker build -t $(DOCKER_IMAGE_NAME) .
-    docker run -e DATABASE_URL="$(DATABASE_URL)" $(DOCKER_IMAGE_NAME)
+    docker run -e DATABASE_URL="$(DATABASE_URL)" -p 9090:8080 $(DOCKER_IMAGE_NAME)
