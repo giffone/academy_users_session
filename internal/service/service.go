@@ -12,7 +12,7 @@ import (
 type Service interface {
 	CreateSession(ctx context.Context, req *request.Session) (*domain.Session, error)
 	Activity(ctx context.Context, req *request.Activity) error
-	GetOnlineSessions() ([]domain.Session, error)
+	GetOnlineSessions(ctx context.Context) ([]domain.Session, error)
 }
 
 func New(storage postgres.Storage) Service {
@@ -47,7 +47,10 @@ func (s *service) Activity(ctx context.Context, req *request.Activity) error {
 	return nil
 }
 
-func (s *service) GetOnlineSessions() ([]domain.Session, error) {
-	// s.storage.GetOnlineDashboard()
-	return nil, nil
+func (s *service) GetOnlineSessions(ctx context.Context) ([]domain.Session, error) {
+	sessions, err := s.storage.GetOnlineDashboard(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("GetOnlineDashboard: %w", err)
+	}
+	return sessions, nil
 }
