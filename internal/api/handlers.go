@@ -14,7 +14,7 @@ import (
 
 type Handlers interface {
 	CreateSession(c echo.Context) error
-	UpdateSession(c echo.Context) error
+	Activity(c echo.Context) error
 	GetOnlineSessions(c echo.Context) error
 }
 
@@ -61,8 +61,29 @@ func (h *handlers) CreateSession(c echo.Context) error {
 	return c.JSON(http.StatusCreated, nil)
 }
 
-func (h *handlers) UpdateSession(c echo.Context) error {
-	return nil
+func (h *handlers) Activity(c echo.Context) error {
+	var req request.Activity
+
+	// parse data
+	if err := c.Bind(&req); err != nil {
+		e := fmt.Errorf("bind req body: %s", err)
+		h.logg.Error(e)
+		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+	}
+
+	// validate data
+	if res := req.Validate(); res != nil {
+		h.logg.Errorf("validate: %s", res.Message)
+		return c.JSON(http.StatusBadRequest, res)
+	}
+
+	// create activity
+	if err := h.svc.Activity(c.Request().Context(), &req); err != nil {
+		h.logg.Error(err.Error())
+		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+	}
+
+	return c.JSON(http.StatusCreated, nil)
 }
 
 func (h *handlers) GetOnlineSessions(c echo.Context) error {

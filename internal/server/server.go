@@ -24,7 +24,7 @@ func newRouter(h api.Handlers) *echo.Echo {
 	// register handlers
 	g := e.Group("/api/session-manager")
 	g.POST("/session", h.CreateSession)
-	g.PUT("/session/:id", h.UpdateSession)
+	g.POST("/activity", h.Activity)
 	g.GET("/online-sessions", h.GetOnlineSessions)
 	return e
 }
