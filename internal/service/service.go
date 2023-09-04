@@ -15,8 +15,8 @@ type Service interface {
 	GetOnlineSessions() ([]domain.Session, error)
 }
 
-func New() Service {
-	return &service{}
+func New(storage postgres.Storage) Service {
+	return &service{storage: storage}
 }
 
 type service struct {
