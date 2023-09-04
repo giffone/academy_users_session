@@ -36,37 +36,29 @@ func (s *Session) Validate() *response.Data {
 	return nil
 }
 
-type PingSession struct {
+type Activity struct {
 	SessionID       string    `json:"session_id"`
 	SessionType     string    `json:"session_type"`
-	ComputerName    string    `json:"comp_name"`
-	IPAddress       string    `json:"ip_addr"`
 	Login           string    `json:"login"`
 	NextPingSeconds int       `json:"next_ping_sec"`
 	DateTime        time.Time `json:"date_time"`
 }
 
-func (ps *PingSession) Validate() *response.Data {
-	if ps.SessionID == "" {
+func (a *Activity) Validate() *response.Data {
+	if a.SessionID == "" {
 		return response.ErrEmpty("session_id")
 	}
-	if ps.SessionType == "" {
+	if a.SessionType == "" {
 		return response.ErrEmpty("session_type")
 	}
-	if ps.ComputerName == "" {
-		return response.ErrEmpty("comp_name")
-	}
-	// if ps.IPAddress == "" {
-	// 	return response.ErrEmpty("ip")
-	// }
-	if ps.Login == "" {
+	if a.Login == "" {
 		return response.ErrEmpty("login")
 	}
-	if ps.NextPingSeconds <= 0 {
+	if a.NextPingSeconds <= 0 {
 		return response.ErrEmpty("next ping duration less or eq 0")
 	}
-	if ps.DateTime.IsZero() {
-		ps.DateTime = time.Now()
+	if a.DateTime.IsZero() {
+		a.DateTime = time.Now()
 	}
 	return nil
 }

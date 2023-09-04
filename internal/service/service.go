@@ -11,7 +11,7 @@ import (
 
 type Service interface {
 	CreateSession(ctx context.Context, req *request.Session) (*domain.Session, error)
-	PingSession(ctx context.Context, req *request.PingSession) error
+	Activity(ctx context.Context, req *request.Activity) error
 	GetOnlineSessions() ([]domain.Session, error)
 }
 
@@ -25,7 +25,7 @@ type service struct {
 
 func (s *service) CreateSession(ctx context.Context, req *request.Session) (*domain.Session, error) {
 	// first check if session already exists
-	if session, err := s.storage.IsSessionExists(ctx, req.ComputerName, req.Login); err != nil {
+	if session, err := s.storage.IsSessionExists(ctx, req.Login); err != nil {
 		return nil, fmt.Errorf("IsSessionExists: %w", err)
 	} else if session != nil {
 		return session, response.ErrAccessDenied
@@ -39,9 +39,9 @@ func (s *service) CreateSession(ctx context.Context, req *request.Session) (*dom
 	return nil, nil
 }
 
-func (s *service) PingSession(ctx context.Context, req *request.PingSession) error {
-	if err := s.storage.PingSession(ctx, req); err != nil {
-		return fmt.Errorf("PingSession: %w", err)
+func (s *service) Activity(ctx context.Context, req *request.Activity) error {
+	if err := s.storage.Activity(ctx, req); err != nil {
+		return fmt.Errorf("Activity: %w", err)
 	}
 
 	return nil

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"log"
 	"session_manager/internal/domain"
 	"session_manager/internal/domain/request"
 	"time"
@@ -13,9 +14,9 @@ import (
 
 type Storage interface {
 	CreateSession(ctx context.Context, sess *request.Session) error
-	PingSession(ctx context.Context, ps *request.PingSession) error
+	Activity(ctx context.Context, ps *request.Activity) error
 	GetOnlineDashboard(ctx context.Context) ([]domain.Session, error)
-	IsSessionExists(ctx context.Context, comp_name, login string) (*domain.Session, error)
+	IsSessionExists(ctx context.Context, login string) (*domain.Session, error)
 }
 
 func NewStorage(pool *pgxpool.Pool) Storage {
@@ -27,71 +28,81 @@ type storage struct {
 }
 
 const (
-	zeroStart  = "zero start"
-	zeroEnd    = "zero end"
-
-	createSessionQuery = `INSERT INTO sessions (id, comp_name, ip_addr, login, next_ping_sec, date_time) 
-	VALUES ($1, $2, $3, $4, $5, $6);`
-
-	pingSessionQuery = `INSERT INTO sessions_ping (session_id, session_type, date_time)
-	VALUES ($1, $2, $3)
-	ON CONFLICT (session_id, session_type)
-	DO UPDATE SET
-		date_time = EXCLUDED.date_time;`
-
-	createOnlineSessionQuery = `INSERT INTO online_dashboard (session_id, comp_name, ip_addr, login, date_time)
-	VALUES ($1, $2, $3, $4, $5)
-	ON CONFLICT (comp_name)
-	DO UPDATE SET
-		session_id = EXCLUDED.session_id,
-		ip_addr = EXCLUDED.ip_addr,
-		login = EXCLUDED.login,
-		date_time = EXCLUDED.date_time;`
-
-	onlineDashboardQuery = `SELECT session_id, comp_name, ip_addr, login, date_time
-	FROM online_dashboard;`
-
-	isOnlineSessionQuery = `SELECT session_id, comp_name, ip_addr, login, date_time
-	FROM online_dashboard
-	WHERE comp_name = $1
-	AND login = $2
-	AND date_time >= NOW();`
+	zeroPlatform = "zero platform"
+	// allow the "online" session notification to end (if late) or show that the user is no longer online
+	// by subtracting n-seconds from the current time when checking the online session.
+	//also affects how quickly a user can login again. so the interval should not be long (no more than 60 seconds).
+	minusNSeconds = 10
 )
 
 func (s *storage) CreateSession(ctx context.Context, req *request.Session) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
 	// start session
-	if _, err := tx.Exec(ctx, createSessionQuery,
+	if _, err := s.pool.Exec(ctx, `INSERT INTO 
+		sessions (id, comp_name, ip_addr, login, next_ping_sec, start_date_time, end_date_time) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7);`,
 		req.ID,
 		req.ComputerName,
 		req.IPAddress,
 		req.Login,
 		req.NextPingSeconds,
 		req.DateTime,
-	); err != nil {
-		return fmt.Errorf("start session: %w", err)
-	}
-
-	// put in online dashboard
-	if _, err := tx.Exec(ctx, createOnlineSessionQuery,
-		req.ID,
-		req.ComputerName,
-		req.IPAddress,
-		req.Login,
 		req.DateTime.Add(time.Duration(req.NextPingSeconds)*time.Second),
 	); err != nil {
-		return fmt.Errorf("online dashboard: %w", err)
+		return err
 	}
 
-	err = tx.Commit(ctx)
+	return nil
+}
+
+func (s *storage) Activity(ctx context.Context, req *request.Activity) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	tx, err := s.pool.Begin(context.Background())
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() {
+		if err = tx.Rollback(context.Background()); err != nil {
+			log.Printf("Activity: rollback: %s", err.Error())
+		}
+	}()
+
+	end_date_time := req.DateTime.Add(time.Duration(req.NextPingSeconds) * time.Second)
+
+	updateSessionQuery := `UPDATE sessions 
+	SET end_date_time = $1
+	WHERE id = $2;`
+
+	if req.SessionType != "" {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO activity (session_id, session_type, login, start_date_time, end_date_time)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (session_id, session_type)
+			DO UPDATE SET
+			end_date_time = EXCLUDED.end_date_time;`,
+			req.SessionID,
+			req.SessionType,
+			req.Login,
+			req.DateTime,
+			end_date_time,
+		); err != nil {
+			return fmt.Errorf("exec: activity: %w", err)
+		}
+	}
+
+	// also update session end_date_time
+	if _, err := tx.Exec(ctx, updateSessionQuery,
+		end_date_time,
+		req.SessionID,
+	); err != nil {
+		return fmt.Errorf("exec: activity: %w", err)
+	}
+
+	err = tx.Commit(context.Background())
 	if err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
@@ -99,41 +110,17 @@ func (s *storage) CreateSession(ctx context.Context, req *request.Session) error
 	return nil
 }
 
-func (s *storage) PingSession(ctx context.Context, req *request.PingSession) error {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	endDate := req.DateTime.Add(time.Duration(req.NextPingSeconds) * time.Second)
-
-	if _, err := s.pool.Exec(ctx, pingSessionQuery,
-		req.SessionID,
-		req.SessionType,
-		endDate,
-	); err != nil {
-		return err
-	}
-
-	// put in online dashboard
-	if _, err := s.pool.Exec(ctx, createOnlineSessionQuery,
-		req.SessionID,
-		req.ComputerName,
-		req.IPAddress,
-		req.Login,
-		endDate,
-	); err != nil {
-		return fmt.Errorf("online dashboard: %w", err)
-	}
-
-	return nil
-}
-
 func (s *storage) GetOnlineDashboard(ctx context.Context) ([]domain.Session, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	rows, err := s.pool.Query(ctx, onlineDashboardQuery)
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, comp_name, ip_addr, login, start_date_time, end_date_time
+		FROM sessions
+		WHERE end_date_time >= NOW();`,
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer rows.Close()
 
@@ -142,33 +129,38 @@ func (s *storage) GetOnlineDashboard(ctx context.Context) ([]domain.Session, err
 	for rows.Next() {
 		s := domain.Session{}
 		if err := rows.Scan(
-			&s.SessionID,
+			&s.ID,
 			&s.ComputerName,
 			&s.IPAddress,
 			&s.Login,
-			&s.DateTime,
+			&s.StartDateTime,
+			&s.EndDateTime,
 		); err != nil {
-			return nil, fmt.Errorf("iterate row: %w", err)
+			return nil, fmt.Errorf("in iterate row: %w", err)
 		}
 		sessions = append(sessions, s)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows all: %w", err)
+		return nil, fmt.Errorf("rows at all: %w", err)
 	}
 
 	return sessions, nil
 }
 
-func (s *storage) IsSessionExists(ctx context.Context, comp_name, login string) (*domain.Session, error) {
+func (s *storage) IsSessionExists(ctx context.Context, login string) (*domain.Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	var session domain.Session
 
-	if err := s.pool.QueryRow(ctx, isOnlineSessionQuery,
-		comp_name,
+	if err := s.pool.QueryRow(ctx,
+		`SELECT id, comp_name, ip_addr, login, start_date_time, end_date_time
+		FROM sessions
+		WHERE login = $1
+		AND end_date_time >= (NOW() - INTERVAL '$2 seconds');`,
 		login,
+		minusNSeconds,
 	).Scan(&session); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
