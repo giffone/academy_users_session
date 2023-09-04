@@ -28,7 +28,6 @@ type storage struct {
 }
 
 const (
-	zeroPlatform = "zero platform"
 	// allow the "online" session notification to end (if late) or show that the user is no longer online
 	// by subtracting n-seconds from the current time when checking the online session.
 	//also affects how quickly a user can login again. so the interval should not be long (no more than 60 seconds).
@@ -58,51 +57,61 @@ func (s *storage) CreateSession(ctx context.Context, req *request.Session) error
 }
 
 func (s *storage) Activity(ctx context.Context, req *request.Activity) error {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	tx, err := s.pool.Begin(context.Background())
+	updateSessionEndQuery := `UPDATE sessions 
+	SET end_date_time = $1
+	WHERE id = $2;`
+
+	end_date_time := req.DateTime.Add(time.Duration(req.NextPingSeconds) * time.Second)
+
+	// -------------- if only session
+	if req.SessionType == "" {
+		if _, err := s.pool.Exec(ctx2, updateSessionEndQuery,
+			end_date_time,
+			req.SessionID,
+		); err != nil {
+			return fmt.Errorf("exec: activity: %w", err)
+		}
+		return nil
+	}
+
+	// -------------- if other activity [on zero platforn and etc...]
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() {
-		if err = tx.Rollback(context.Background()); err != nil {
+		if err = tx.Rollback(ctx); err != nil {
 			log.Printf("Activity: rollback: %s", err.Error())
 		}
 	}()
 
-	end_date_time := req.DateTime.Add(time.Duration(req.NextPingSeconds) * time.Second)
-
-	updateSessionQuery := `UPDATE sessions 
-	SET end_date_time = $1
-	WHERE id = $2;`
-
-	if req.SessionType != "" {
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO activity (session_id, session_type, login, start_date_time, end_date_time)
+	if _, err := tx.Exec(ctx2,
+		`INSERT INTO activity (session_id, session_type, login, start_date_time, end_date_time)
 			VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (session_id, session_type)
 			DO UPDATE SET
 			end_date_time = EXCLUDED.end_date_time;`,
-			req.SessionID,
-			req.SessionType,
-			req.Login,
-			req.DateTime,
-			end_date_time,
-		); err != nil {
-			return fmt.Errorf("exec: activity: %w", err)
-		}
+		req.SessionID,
+		req.SessionType,
+		req.Login,
+		req.DateTime,
+		end_date_time,
+	); err != nil {
+		return fmt.Errorf("exec: activity: %w", err)
 	}
 
 	// also update session end_date_time
-	if _, err := tx.Exec(ctx, updateSessionQuery,
+	if _, err := tx.Exec(ctx2, updateSessionEndQuery,
 		end_date_time,
 		req.SessionID,
 	); err != nil {
 		return fmt.Errorf("exec: activity: %w", err)
 	}
 
-	err = tx.Commit(context.Background())
+	err = tx.Commit(ctx)
 	if err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
