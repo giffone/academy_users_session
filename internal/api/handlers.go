@@ -87,5 +87,14 @@ func (h *handlers) Activity(c echo.Context) error {
 }
 
 func (h *handlers) GetOnlineSessions(c echo.Context) error {
-	return nil
+	sessions, err := h.svc.GetOnlineSessions(c.Request().Context())
+	if err != nil {
+		h.logg.Error(err.Error())
+		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, response.Data{
+		Message:  "OK",
+		Sessions: sessions,
+	})
 }
