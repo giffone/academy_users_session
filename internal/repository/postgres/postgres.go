@@ -88,6 +88,7 @@ func (s *storage) Activity(ctx context.Context, req *request.Activity) error {
 		}
 	}()
 
+	// start activity
 	if _, err := tx.Exec(ctx2,
 		`INSERT INTO activity (session_id, session_type, login, start_date_time, end_date_time)
 			VALUES ($1, $2, $3, $4, $5)
@@ -120,7 +121,7 @@ func (s *storage) Activity(ctx context.Context, req *request.Activity) error {
 }
 
 func (s *storage) GetOnlineDashboard(ctx context.Context) ([]domain.Session, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	rows, err := s.pool.Query(ctx,
