@@ -15,4 +15,5 @@ func main() {
 	// server
 	srv := server.NewServer(env)
 	srv.Run(ctx)
+	defer srv.Stop(ctx)
 }

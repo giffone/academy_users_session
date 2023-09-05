@@ -15,12 +15,17 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
-type Server struct {
+type Server interface {
+	Run(ctx context.Context)
+	Stop(ctx context.Context)
+}
+
+type server struct {
 	router   *echo.Echo
 }
 
-func NewServer(env *Env) *Server {
-	s := Server{
+func NewServer(env *Env) Server {
+	s := server{
 		router: echo.New(),
 	}
 
@@ -40,15 +45,15 @@ func NewServer(env *Env) *Server {
 	g := s.router.Group("/api/session-manager")
 	g.POST("/session", hndl.CreateSession)
 	g.POST("/activity", hndl.Activity)
-	g.GET("/online-sessions", hndl.GetOnlineSessions)
+	g.GET("/dashboard", hndl.GetOnlineSessions)
 
 	return &s
 }
 
-func (s *Server) Run(ctx context.Context) {
+func (s *server) Run(ctx context.Context) {
 	ctxSignal, cancelSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	// start router
+	// start server
 	go func() {
 		log.Printf("server starting on port: 8080")
 		if err := s.router.Start(":8080"); err != nil && err != http.ErrServerClosed {
@@ -59,16 +64,15 @@ func (s *Server) Run(ctx context.Context) {
 
 	// wait system notifiers or cancel func
 	<-ctxSignal.Done()
-	log.Println("stopping server")
+}
 
+func (s *server) Stop(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// stop router
 	if err := s.router.Shutdown(ctx); err != nil {
-		log.Printf("server stopping error: %s\n", err.Error())
+		log.Printf("server stop error: %s\n", err.Error())
 		return
 	}
 	log.Println("server stopped successfully")
-
 }
