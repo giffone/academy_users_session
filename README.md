@@ -96,3 +96,33 @@ Content-Type: application/json
 }
 ```
 the last notification (session or activity) sent from the computer will mean the end of the session ("date_time" + "next_ping_sec").
+#### Get online sessions
+```http
+GET http://localhost:8080/api/session-manager/dashboard
+```
+response:
+```json
+// Content-Type: application/json
+{
+  "status": "Ok",
+  "sessions": [
+    {
+      "id": "5f2c9d6c-2a84-4d63-b64c-6a0f12eb3471",
+      "comp_name": "academie-mac-pink0001",
+      "ip_addr": "192.168.1.100",
+      "login": "user_1",
+      "start_date_time": "2023-09-06T08:00:00Z",
+      "end_date_time": "2023-09-06T09:30:00Z" // ends at: last ping + "next_ping_sec"
+    },
+    {
+      "id": "6b8a4f1a-1d09-4d08-8a03-86be3e3b9104",
+      "comp_name": "academie-mac-blue0002",
+      "ip_addr": "192.168.1.101",
+      "login": "user_2",
+      "start_date_time": "2023-09-06T10:15:00Z",
+      "end_date_time": "2023-09-06T11:45:00Z"
+    }
+    // ...
+  ]
+}
+```
