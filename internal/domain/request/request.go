@@ -70,3 +70,39 @@ func (a *Activity) Validate() *response.Data {
 	}
 	return nil
 }
+
+type UserActivity struct {
+	SessionType string    `query:"session_type"` // parsing by link's queries
+	Login       string    `query:"login"`
+	FromDate    time.Time `query:"from_date"`
+	ToDate      time.Time `query:"to_date"`
+	GroupBy     string    `query:"group_by"`
+}
+
+const (
+	GroupByMonth = "month"
+	GroupByAate  = "date"
+)
+
+func (ua *UserActivity) Validate() *response.Data {
+	if ua.SessionType == "" {
+		return response.ErrEmpty("session_type")
+	}
+	if ua.Login == "" {
+		return response.ErrEmpty("login")
+	}
+	if ua.FromDate.IsZero() && ua.ToDate.IsZero() {
+		ua.FromDate = time.Now().Truncate(24 * time.Hour)
+		ua.ToDate = ua.FromDate.Add(24 * time.Hour)
+	}
+	if ua.ToDate.IsZero() {
+		ua.FromDate = time.Now().Truncate(24 * time.Hour).Add(24 * time.Hour)
+	}
+	if ua.GroupBy == "" {
+		ua.GroupBy = GroupByAate
+	}
+	if ua.GroupBy != GroupByMonth && ua.GroupBy != GroupByAate {
+		return response.ErrEmpty("group by must be 'month' or 'date'")
+	}
+	return nil
+}

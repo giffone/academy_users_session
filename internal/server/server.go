@@ -21,7 +21,7 @@ type Server interface {
 }
 
 type server struct {
-	router   *echo.Echo
+	router *echo.Echo
 }
 
 func NewServer(env *Env) Server {
@@ -46,8 +46,9 @@ func NewServer(env *Env) Server {
 	g.POST("/users", hndl.CreateUsers)
 	g.POST("/computers", hndl.CreateComputers)
 	g.POST("/session", hndl.CreateSession)
-	g.POST("/activity", hndl.Activity)
+	g.POST("/activity", hndl.CreateActivity)
 	g.GET("/dashboard", hndl.GetOnlineSessions)
+	g.GET("/activity", hndl.GetUserActivity)
 
 	return &s
 }

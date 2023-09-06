@@ -104,8 +104,8 @@ response:
 ```json
 // Content-Type: application/json
 {
-  "status": "Ok",
-  "sessions": [
+  "message": "OK",
+  "data": [
     {
       "id": "5f2c9d6c-2a84-4d63-b64c-6a0f12eb3471",
       "comp_name": "academie-mac-pink0001",
@@ -124,5 +124,61 @@ response:
     }
     // ...
   ]
+}
+```
+#### Get user activity
+query param
+- `session_type` - ***"platform zero"*** or your event
+- `login` - ***"user_1"***
+- `from_date` - ***"2022-09-01T00:00:00Z"***
+- `to_date` - ***"2022-12-31T00:00:00Z"***
+- `group_by` - ***"month" or "date"***
+```http
+GET http://localhost:8080/api/session-manager/activity?session_type=xxx&login=xxx&from_date=xxx&to_date=xxx&group_by=xxx
+```
+response - group by month:
+```json
+// Content-Type: application/json
+{
+    "message": "OK",
+    "data": {
+        "login": "user_1",
+        "total_hours": 120,
+        "user_activity": [
+            {
+                "year": "2023",
+                "month_name": "January",
+                "hours": 40
+            },
+            {
+                "year": "2023",
+                "month_name": "February",
+                "hours": 35
+            },
+            // ...
+        ]
+    }
+}
+```
+response - group by date:
+```json
+// Content-Type: application/json
+{
+    "message": "OK",
+    "data": {
+        "login": "user_1",
+        "total_hours": 11,
+        "user_activity": [
+            {
+                "date": "2023-01-01",
+                "hours": 4
+            },
+            {
+                "date": "2023-01-02",
+                "hours": 3
+            },
+            // ...
+        ]
+    }
 }
 ```
