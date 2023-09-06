@@ -55,7 +55,6 @@ func (s *server) Run(ctx context.Context) {
 
 	// start server
 	go func() {
-		log.Printf("server starting on port: 8080")
 		if err := s.router.Start(":8080"); err != nil && err != http.ErrServerClosed {
 			log.Printf("server start error: %s\n", err.Error())
 			cancelSignal()
