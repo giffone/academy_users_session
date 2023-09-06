@@ -13,6 +13,8 @@ import (
 )
 
 type Handlers interface {
+	CreateUsers(c echo.Context) error
+	CreateComputers(c echo.Context) error
 	CreateSession(c echo.Context) error
 	Activity(c echo.Context) error
 	GetOnlineSessions(c echo.Context) error
@@ -29,6 +31,45 @@ func NewHandlers(logg echo.Logger, svc service.Service) Handlers {
 		svc:  svc,
 	}
 }
+
+func (h *handlers) CreateUsers(c echo.Context) error {
+	var req []request.User
+
+	// parse data
+	if err := c.Bind(&req); err != nil {
+		e := fmt.Errorf("bind req body: %s", err)
+		h.logg.Error(e)
+		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+	}
+
+	// create users
+	if err := h.svc.CreateUsers(c.Request().Context(), req); err != nil {
+		h.logg.Error(err.Error())
+		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+	}
+
+	return c.JSON(http.StatusCreated, nil)
+}
+
+func (h *handlers) CreateComputers(c echo.Context) error {
+	var req []request.Computer
+
+	// parse data
+	if err := c.Bind(&req); err != nil {
+		e := fmt.Errorf("bind req body: %s", err)
+		h.logg.Error(e)
+		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+	}
+
+	// create users
+	if err := h.svc.CreateComputers(c.Request().Context(), req); err != nil {
+		h.logg.Error(err.Error())
+		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+	}
+
+	return c.JSON(http.StatusCreated, nil)
+}
+
 
 func (h *handlers) CreateSession(c echo.Context) error {
 	var req request.Session

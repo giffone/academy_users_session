@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"session_manager/internal/domain"
@@ -13,6 +14,8 @@ import (
 )
 
 type Storage interface {
+	CreateUsers(ctx context.Context, req []request.User) (err error)
+	CreateComputers(ctx context.Context, req []request.Computer) (err error)
 	CreateSession(ctx context.Context, sess *request.Session) error
 	Activity(ctx context.Context, ps *request.Activity) error
 	GetOnlineDashboard(ctx context.Context) ([]domain.Session, error)
@@ -33,6 +36,64 @@ const (
 	//also affects how quickly a user can login again. so the interval should not be long (no more than 60 seconds).
 	minusNSeconds = 10
 )
+
+func (s *storage) CreateUsers(ctx context.Context, req []request.User) (err error) {
+	batch := &pgx.Batch{}
+
+	for _, user := range req {
+		if user.Name == "" {
+			continue
+		}
+		batch.Queue(`INSERT INTO users (login) 
+		VALUES ($1) 
+		ON CONFLICT (login) DO NOTHING`,
+			user.Name,
+		)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	defer cancel()
+
+	results := s.pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	for i := 0; i < len(req); i++ {
+		if _, err2 := results.Exec(); err2 != nil {
+			err = errors.Join(err, err2)
+		}
+	}
+
+	return err
+}
+
+func (s *storage) CreateComputers(ctx context.Context, req []request.Computer) (err error) {
+	batch := &pgx.Batch{}
+
+	for _, computer := range req {
+		if computer.Name == "" {
+			continue
+		}
+		batch.Queue(`INSERT INTO computers (comp_name) 
+		VALUES ($1) 
+		ON CONFLICT (comp_name) DO NOTHING`,
+			computer.Name,
+		)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	defer cancel()
+
+	results := s.pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	for i := 0; i < len(req); i++ {
+		if _, err2 := results.Exec(); err2 != nil {
+			err = errors.Join(err, err2)
+		}
+	}
+
+	return err
+}
 
 func (s *storage) CreateSession(ctx context.Context, req *request.Session) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

@@ -10,6 +10,8 @@ import (
 )
 
 type Service interface {
+	CreateUsers(ctx context.Context, req []request.User) error
+	CreateComputers(ctx context.Context, req []request.Computer) error 
 	CreateSession(ctx context.Context, req *request.Session) (*domain.Session, error)
 	Activity(ctx context.Context, req *request.Activity) error
 	GetOnlineSessions(ctx context.Context) ([]domain.Session, error)
@@ -21,6 +23,22 @@ func New(storage postgres.Storage) Service {
 
 type service struct {
 	storage postgres.Storage
+}
+
+func (s *service) CreateUsers(ctx context.Context, req []request.User) error {
+	if err := s.storage.CreateUsers(ctx, req); err != nil {
+		return fmt.Errorf("CreateUsers: %w", err)
+	}
+
+	return nil
+}
+
+func (s *service) CreateComputers(ctx context.Context, req []request.Computer) error {
+	if err := s.storage.CreateComputers(ctx, req); err != nil {
+		return fmt.Errorf("CreateComputers: %w", err)
+	}
+
+	return nil
 }
 
 func (s *service) CreateSession(ctx context.Context, req *request.Session) (*domain.Session, error) {

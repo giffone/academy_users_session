@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+type User struct {
+	Name string `json:"name"`
+}
+
+type Computer struct {
+	Name string `json:"name"`
+}
+
 type Session struct {
 	ID              string    `json:"id"`
 	ComputerName    string    `json:"comp_name"`

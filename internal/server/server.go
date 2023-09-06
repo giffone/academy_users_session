@@ -43,6 +43,8 @@ func NewServer(env *Env) Server {
 
 	// register handlers
 	g := s.router.Group("/api/session-manager")
+	g.POST("/users", hndl.CreateUsers)
+	g.POST("/computers", hndl.CreateComputers)
 	g.POST("/session", hndl.CreateSession)
 	g.POST("/activity", hndl.Activity)
 	g.GET("/dashboard", hndl.GetOnlineSessions)
