@@ -104,7 +104,7 @@ response:
 ```json
 // Content-Type: application/json
 {
-  "message": "OK",
+  "message": "Success",
   "data": [
     {
       "id": "5f2c9d6c-2a84-4d63-b64c-6a0f12eb3471",
@@ -140,7 +140,7 @@ response - group by month:
 ```json
 // Content-Type: application/json
 {
-    "message": "OK",
+    "message": "Success",
     "data": {
         "login": "user_1",
         "total_hours": 120,
@@ -164,7 +164,7 @@ response - group by date:
 ```json
 // Content-Type: application/json
 {
-    "message": "OK",
+    "message": "Success",
     "data": {
         "login": "user_1",
         "total_hours": 11,

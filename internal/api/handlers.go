@@ -48,7 +48,9 @@ func (h *handlers) CreateUsers(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
 	}
 
-	return c.JSON(http.StatusCreated, nil)
+	return c.JSON(http.StatusCreated, response.Data{
+		Message: http.StatusText(http.StatusCreated)},
+	)
 }
 
 func (h *handlers) CreateComputers(c echo.Context) error {
@@ -67,7 +69,9 @@ func (h *handlers) CreateComputers(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
 	}
 
-	return c.JSON(http.StatusCreated, nil)
+	return c.JSON(http.StatusCreated, response.Data{
+		Message: http.StatusText(http.StatusCreated)},
+	)
 }
 
 func (h *handlers) CreateSession(c echo.Context) error {
@@ -98,7 +102,9 @@ func (h *handlers) CreateSession(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
 	}
 
-	return c.JSON(http.StatusCreated, nil)
+	return c.JSON(http.StatusCreated, response.Data{
+		Message: http.StatusText(http.StatusCreated)},
+	)
 }
 
 func (h *handlers) CreateActivity(c echo.Context) error {
@@ -123,7 +129,9 @@ func (h *handlers) CreateActivity(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
 	}
 
-	return c.JSON(http.StatusCreated, nil)
+	return c.JSON(http.StatusCreated, response.Data{
+		Message: http.StatusText(http.StatusCreated)},
+	)
 }
 
 func (h *handlers) GetOnlineSessions(c echo.Context) error {
@@ -134,7 +142,7 @@ func (h *handlers) GetOnlineSessions(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, response.Data{
-		Message: "OK",
+		Message: "Success",
 		Data:    sessions,
 	})
 }
@@ -162,7 +170,7 @@ func (h *handlers) GetUserActivity(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, response.Data{
-		Message: "OK",
+		Message: "Success",
 		Data:    activity,
 	})
 }
