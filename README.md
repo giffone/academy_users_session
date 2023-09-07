@@ -132,7 +132,7 @@ query param
 - `login` - ***"user_1"***
 - `from_date` - ***"2022-09-01T00:00:00Z"***
 - `to_date` - ***"2022-12-31T00:00:00Z"***
-- `group_by` - ***"month" or "date"***
+- `group_by` - ***"month"*** or ***"date"***
 ```http
 GET http://localhost:8080/api/session-manager/activity?session_type=xxx&login=xxx&from_date=xxx&to_date=xxx&group_by=xxx
 ```
