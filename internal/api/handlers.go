@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"fmt"
+	"log"
+
 	"net/http"
 	"session_manager/internal/domain/request"
 	"session_manager/internal/domain/response"
@@ -10,6 +12,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 )
+
+var logErr = "logErr"
 
 type Handlers interface {
 	CreateUsers(c echo.Context) error
@@ -21,31 +25,30 @@ type Handlers interface {
 }
 
 type handlers struct {
-	logg echo.Logger
-	svc  service.Service
+	svc service.Service
 }
 
 func NewHandlers(logg echo.Logger, svc service.Service) Handlers {
 	return &handlers{
-		logg: logg,
-		svc:  svc,
+		svc: svc,
 	}
 }
 
 func (h *handlers) CreateUsers(c echo.Context) error {
 	var req []request.User
 
+	defer printLogErr(c)
+
 	// parse data
 	if err := c.Bind(&req); err != nil {
-		e := fmt.Errorf("bind req body: %s", err)
-		h.logg.Error(e)
-		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateUsers: bind req body: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// create users
 	if err := h.svc.CreateUsers(c.Request().Context(), req); err != nil {
-		h.logg.Error(err.Error())
-		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateUsers: %s", err))
+		return customErrResponse(c, err, nil)
 	}
 
 	return c.JSON(http.StatusCreated, response.Data{
@@ -56,17 +59,18 @@ func (h *handlers) CreateUsers(c echo.Context) error {
 func (h *handlers) CreateComputers(c echo.Context) error {
 	var req []request.Computer
 
+	defer printLogErr(c)
+
 	// parse data
 	if err := c.Bind(&req); err != nil {
-		e := fmt.Errorf("bind req body: %s", err)
-		h.logg.Error(e)
-		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateComputers: bind req body: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// create users
 	if err := h.svc.CreateComputers(c.Request().Context(), req); err != nil {
-		h.logg.Error(err.Error())
-		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateComputers: %s", err))
+		return customErrResponse(c, err, nil)
 	}
 
 	return c.JSON(http.StatusCreated, response.Data{
@@ -77,29 +81,24 @@ func (h *handlers) CreateComputers(c echo.Context) error {
 func (h *handlers) CreateSession(c echo.Context) error {
 	var req request.Session
 
+	defer printLogErr(c)
+
 	// parse data
 	if err := c.Bind(&req); err != nil {
-		e := fmt.Errorf("bind req body: %s", err)
-		h.logg.Error(e)
-		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateSession: bind req body: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// validate data
-	if res := req.Validate(); res != nil {
-		h.logg.Errorf("validate: %s", res.Message)
-		return c.JSON(http.StatusBadRequest, res)
+	if err := req.Validate(); err != nil {
+		c.Set(logErr, fmt.Sprintf("CreateSession: validate: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// create session
 	if sess, err := h.svc.CreateSession(c.Request().Context(), &req); err != nil {
-		if errors.Is(err, response.ErrAccessDenied) && sess != nil {
-			return c.JSON(http.StatusUnauthorized, response.Data{
-				Message: err.Error(),
-				Data:    []response.Session{*sess},
-			})
-		}
-		h.logg.Error(err.Error())
-		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateSession: %s", err))
+		return customErrResponse(c, err, sess)
 	}
 
 	return c.JSON(http.StatusCreated, response.Data{
@@ -110,23 +109,24 @@ func (h *handlers) CreateSession(c echo.Context) error {
 func (h *handlers) CreateActivity(c echo.Context) error {
 	var req request.Activity
 
+	defer printLogErr(c)
+
 	// parse data
 	if err := c.Bind(&req); err != nil {
-		e := fmt.Errorf("bind req body: %s", err)
-		h.logg.Error(e)
-		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateActivity: bind req body: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// validate data
-	if res := req.Validate(); res != nil {
-		h.logg.Errorf("validate: %s", res.Message)
-		return c.JSON(http.StatusBadRequest, res)
+	if err := req.Validate(); err != nil {
+		c.Set(logErr, fmt.Sprintf("CreateActivity: validate: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// create activity
 	if err := h.svc.CreateActivity(c.Request().Context(), &req); err != nil {
-		h.logg.Error(err.Error())
-		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+		c.Set(logErr, fmt.Sprintf("CreateActivity: %s", err))
+		return customErrResponse(c, err, nil)
 	}
 
 	return c.JSON(http.StatusCreated, response.Data{
@@ -135,9 +135,11 @@ func (h *handlers) CreateActivity(c echo.Context) error {
 }
 
 func (h *handlers) GetOnlineSessions(c echo.Context) error {
+	defer printLogErr(c)
+
 	sessions, err := h.svc.GetOnlineDashboard(c.Request().Context())
 	if err != nil {
-		h.logg.Error(err.Error())
+		c.Set(logErr, fmt.Sprintf("GetOnlineSessions: %s", err))
 		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
 	}
 
@@ -147,25 +149,26 @@ func (h *handlers) GetOnlineSessions(c echo.Context) error {
 	})
 }
 
-func (h *handlers) GetUserActivity(c echo.Context) error {
+func (h *handlers) GetUserActivity(c echo.Context) (err error) {
 	var req request.UserActivity
+
+	defer printLogErr(c)
 
 	// parse data
 	if err := c.Bind(&req); err != nil {
-		e := fmt.Errorf("bind req body: %s", err)
-		h.logg.Error(e)
-		return c.JSON(http.StatusBadRequest, response.Data{Message: e.Error()})
+		c.Set(logErr, fmt.Sprintf("GetUserActivity: bind req body: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// validate data
-	if res := req.Validate(); res != nil {
-		h.logg.Errorf("validate: %s", res.Message)
-		return c.JSON(http.StatusBadRequest, res)
+	if err := req.Validate(); err != nil {
+		c.Set(logErr, fmt.Sprintf("GetUserActivity: validate: %s", err))
+		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	activity, err := h.svc.GetUserActivity(c.Request().Context(), &req)
 	if err != nil {
-		h.logg.Error(err.Error())
+		c.Set(logErr, fmt.Sprintf("GetUserActivity: %s", err))
 		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
 	}
 
@@ -173,4 +176,31 @@ func (h *handlers) GetUserActivity(c echo.Context) error {
 		Message: "Success",
 		Data:    activity,
 	})
+}
+
+func customErrResponse(c echo.Context, err error, data any) error {
+	if data == nil {
+		data = []string{} // to show empty array
+	}
+	if errors.Is(err, response.ErrAccessDenied) {
+		return c.JSON(http.StatusUnauthorized, response.Data{
+			Message: err.Error(),
+			Data:    data,
+		})
+	}
+	var errBadReq *response.ErrBadReq
+	if errors.As(err, &errBadReq) {
+		return c.JSON(http.StatusBadRequest, response.Data{
+			Message: err.Error(),
+			Data:    data,
+		})
+	}
+
+	return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})
+}
+
+func printLogErr(c echo.Context) {
+	if eLog := c.Get(logErr); eLog != nil {
+		log.Printf("\n//----\n[error]: %v\n----\\\\\n", eLog)
+	}
 }

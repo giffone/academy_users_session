@@ -9,7 +9,9 @@ import (
 	"session_manager/internal/domain/response"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -19,7 +21,7 @@ type Storage interface {
 	CreateSession(ctx context.Context, sess *request.Session) error
 	CreateActivity(ctx context.Context, ps *request.Activity) error
 	GetOnlineDashboard(ctx context.Context) ([]response.Session, error)
-	IsSessionExists(ctx context.Context, login string) (*response.Session, error)
+	IsSessionExists(ctx context.Context, login string) ([]response.Session, error)
 	GetUserActivityByMonth(ctx context.Context, req *request.UserActivity) (*response.Activity, error)
 	GetUserActivityByDate(ctx context.Context, req *request.UserActivity) (*response.Activity, error)
 }
@@ -113,7 +115,7 @@ func (s *storage) CreateSession(ctx context.Context, req *request.Session) error
 		req.DateTime,
 		req.DateTime.Add(time.Duration(req.NextPingSeconds)*time.Second),
 	); err != nil {
-		return err
+		return customErr("exec", err)
 	}
 
 	return nil
@@ -131,11 +133,14 @@ func (s *storage) CreateActivity(ctx context.Context, req *request.Activity) err
 
 	// -------------- if only session
 	if req.SessionType == "" {
-		if _, err := s.pool.Exec(ctx2, updateSessionEndQuery,
+		log.Printf("time is %v\n", end_date_time)
+		if tag, err := s.pool.Exec(ctx2, updateSessionEndQuery,
 			end_date_time,
 			req.SessionID,
 		); err != nil {
-			return fmt.Errorf("exec: activity: %w", err)
+			return customErr("session: exec: update", err)
+		} else if tag.RowsAffected() == 0 {
+			return &response.ErrNotFound
 		}
 		return nil
 	}
@@ -147,7 +152,7 @@ func (s *storage) CreateActivity(ctx context.Context, req *request.Activity) err
 	}
 	defer func() {
 		if err = tx.Rollback(ctx); err != nil {
-			log.Printf("Activity: rollback: %s", err.Error())
+			log.Printf("CreateActivity: rollback: %s", err.Error())
 		}
 	}()
 
@@ -164,15 +169,17 @@ func (s *storage) CreateActivity(ctx context.Context, req *request.Activity) err
 		req.DateTime,
 		end_date_time,
 	); err != nil {
-		return fmt.Errorf("exec: activity: %w", err)
+		return customErr("activity: exec: insert", err)
 	}
 
 	// also update session end_date_time
-	if _, err := tx.Exec(ctx2, updateSessionEndQuery,
+	if tag, err := tx.Exec(ctx2, updateSessionEndQuery,
 		end_date_time,
 		req.SessionID,
 	); err != nil {
-		return fmt.Errorf("exec: activity: %w", err)
+		return customErr("activity: exec: update", err)
+	} else if tag.RowsAffected() == 0 {
+		return &response.ErrNotFound
 	}
 
 	err = tx.Commit(ctx)
@@ -333,25 +340,64 @@ func (s *storage) GetUserActivityByDate(ctx context.Context, req *request.UserAc
 	}, nil
 }
 
-func (s *storage) IsSessionExists(ctx context.Context, login string) (*response.Session, error) {
+func (s *storage) IsSessionExists(ctx context.Context, login string) ([]response.Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	var session response.Session
+	query := fmt.Sprintf(`SELECT id, comp_name, ip_addr, login, start_date_time, end_date_time
+	FROM sessions
+	WHERE login = $1
+		AND end_date_time >= (NOW() - INTERVAL '%d seconds');`, minusNSeconds)
 
-	if err := s.pool.QueryRow(ctx,
-		`SELECT id, comp_name, ip_addr, login, start_date_time, end_date_time
-		FROM sessions
-		WHERE login = $1
-			AND end_date_time >= (NOW() - INTERVAL '$2 seconds');`,
-		login,
-		minusNSeconds,
-	).Scan(&session); err != nil {
+	rows, err := s.pool.Query(ctx, query, login)
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer rows.Close()
+
+	sessions := make([]response.Session, 0, 250)
+
+	for rows.Next() {
+		session := response.Session{}
+		if err := rows.Scan(
+			&session.ID,
+			&session.ComputerName,
+			&session.IPAddress,
+			&session.Login,
+			&session.StartDateTime,
+			&session.EndDateTime,
+		); err != nil {
+			return nil, fmt.Errorf("in iterate row: %w", err)
+		}
+		sessions = append(sessions, session)
 	}
 
-	return &session, nil
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows at all: %w", err)
+	}
+
+	return sessions, nil
+}
+
+func customErr(message string, err error) error {
+	if pgErr, ok := err.(*pgconn.PgError); ok {
+		if pgErr.Code == pgerrcode.UniqueViolation {
+			return &response.ErrDuplicateKey
+		}
+		if pgErr.Code == pgerrcode.RaiseException {
+			if pgErr.Message == response.ErrEndStartDate.Error() {
+				return &response.ErrEndStartDate
+			}
+			if pgErr.Message == response.ErrEndEndDate.Error() {
+				return &response.ErrEndEndDate
+			}
+		}
+	}
+	if message != "" {
+		return fmt.Errorf("%s: %s", message, err)
+	}
+	return err
 }

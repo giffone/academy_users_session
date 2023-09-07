@@ -1,8 +1,6 @@
 package response
 
 import (
-	"errors"
-	"fmt"
 	"time"
 )
 
@@ -19,14 +17,6 @@ type Session struct {
 	StartDateTime time.Time `db:"start_date_time" json:"start_date_time"`
 	EndDateTime   time.Time `db:"end_date_time" json:"end_date_time"`
 }
-
-func ErrEmpty(field string) *Data {
-	return &Data{
-		Message: fmt.Sprintf("%s is empty", field),
-	}
-}
-
-var ErrAccessDenied = errors.New("access denied")
 
 type Activity struct {
 	Login        string `db:"login"`

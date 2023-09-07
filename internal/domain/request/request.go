@@ -1,7 +1,7 @@
 package request
 
 import (
-	"session_manager/internal/domain/response"
+	"errors"
 	"time"
 )
 
@@ -22,21 +22,21 @@ type Session struct {
 	DateTime        time.Time `json:"date_time"`
 }
 
-func (s *Session) Validate() *response.Data {
+func (s *Session) Validate() error {
 	if s.ID == "" {
-		return response.ErrEmpty("id")
+		return errors.New("id is empty")
 	}
 	if s.ComputerName == "" {
-		return response.ErrEmpty("comp_name")
+		return errors.New("comp_name is empty")
 	}
 	// if s.IPAddress == "" {
 	// 	return response.ErrEmpty("ip")
 	// }
 	if s.Login == "" {
-		return response.ErrEmpty("login")
+		return errors.New("login is empty")
 	}
 	if s.NextPingSeconds <= 0 {
-		return response.ErrEmpty("next ping duration less or eq 0")
+		return errors.New("next ping duration less or eq 0")
 	}
 	if s.DateTime.IsZero() {
 		s.DateTime = time.Now()
@@ -52,18 +52,15 @@ type Activity struct {
 	DateTime        time.Time `json:"date_time"`
 }
 
-func (a *Activity) Validate() *response.Data {
+func (a *Activity) Validate() error {
 	if a.SessionID == "" {
-		return response.ErrEmpty("session_id")
-	}
-	if a.SessionType == "" {
-		return response.ErrEmpty("session_type")
+		return errors.New("session_id is empty")
 	}
 	if a.Login == "" {
-		return response.ErrEmpty("login")
+		return errors.New("login is empty")
 	}
 	if a.NextPingSeconds <= 0 {
-		return response.ErrEmpty("next ping duration less or eq 0")
+		return errors.New("next ping duration less or eq 0")
 	}
 	if a.DateTime.IsZero() {
 		a.DateTime = time.Now()
@@ -84,12 +81,12 @@ const (
 	GroupByAate  = "date"
 )
 
-func (ua *UserActivity) Validate() *response.Data {
+func (ua *UserActivity) Validate() error {
 	if ua.SessionType == "" {
-		return response.ErrEmpty("session_type")
+		return errors.New("session_type is empty")
 	}
 	if ua.Login == "" {
-		return response.ErrEmpty("login")
+		return errors.New("login is empty")
 	}
 	if ua.FromDate.IsZero() && ua.ToDate.IsZero() {
 		ua.FromDate = time.Now().Truncate(24 * time.Hour)
@@ -102,7 +99,7 @@ func (ua *UserActivity) Validate() *response.Data {
 		ua.GroupBy = GroupByAate
 	}
 	if ua.GroupBy != GroupByMonth && ua.GroupBy != GroupByAate {
-		return response.ErrEmpty("group by must be 'month' or 'date'")
+		return errors.New("group by must be 'month' or 'date'")
 	}
 	return nil
 }
