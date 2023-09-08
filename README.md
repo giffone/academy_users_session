@@ -128,10 +128,10 @@ response:
 ```
 #### Get user activity
 query param
-- `session_type` - ***"platform zero"*** or your event
+- `session_type` - ***"your event"*** or empty
 - `login` - ***"user_1"***
-- `from_date` - ***"2022-09-01T00:00:00Z"***
-- `to_date` - ***"2022-12-31T00:00:00Z"***
+- `from_date` - ***"2022-09-01T00:00:00Z"*** or ***2006-01-02***
+- `to_date` - ***"2022-12-31T00:00:00Z"*** or ***2006-01-02*** or empty
 - `group_by` - ***"month"*** or ***"date"***
 ```http
 GET http://localhost:8080/api/session-manager/activity?session_type=xxx&login=xxx&from_date=xxx&to_date=xxx&group_by=xxx

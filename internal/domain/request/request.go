@@ -160,9 +160,6 @@ func parseDate(s string) (t time.Time, err error) {
 	if err == nil {
 		return t, nil
 	}
-	return t, errors.New(`date format must be 
-	'2006-01-02T15:04:05Z07:00' or 
-	'2006-01-02 15:04:05' or 
-	'2006-01-02'`,
+	return t, errors.New(`date format must be '2006-01-02T15:04:05Z07:00' or '2006-01-02 15:04:05' or '2006-01-02'`,
 	)
 }
