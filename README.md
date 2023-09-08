@@ -140,24 +140,24 @@ response - group by month:
 ```json
 // Content-Type: application/json
 {
-    "message": "Success",
-    "data": {
-        "login": "user_1",
-        "total_hours": 120,
-        "user_activity": [
-            {
-                "year": "2023",
-                "month_name": "January",
-                "hours": 40
-            },
-            {
-                "year": "2023",
-                "month_name": "February",
-                "hours": 35
-            },
+	"message": "Success",
+	"data": {
+		"id": "user_1",
+		"total_hours": 436.63,
+		"user_activity": [
+			{
+				"year": "2023",
+				"month_num": "9",
+				"hours": 90.616667
+			},
+			{
+				"year": "2023",
+				"month_num": "5",
+				"hours": 79.016666
+			}
             // ...
-        ]
-    }
+		]
+	}
 }
 ```
 response - group by date:
@@ -167,15 +167,15 @@ response - group by date:
     "message": "Success",
     "data": {
         "login": "user_1",
-        "total_hours": 11,
+        "total_hours": 37.62,
         "user_activity": [
             {
-                "date": "2023-01-01",
-                "hours": 4
+                "date": "2023-01-01T00:00:00Z",
+                "hours": 13.266666
             },
             {
-                "date": "2023-01-02",
-                "hours": 3
+                "date": "2023-01-02T00:00:00Z",
+                "hours": 7.35
             },
             // ...
         ]

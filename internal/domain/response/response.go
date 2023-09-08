@@ -18,19 +18,19 @@ type Session struct {
 	EndDateTime   time.Time `db:"end_date_time" json:"end_date_time"`
 }
 
-type Activity struct {
-	Login        string `db:"login"`
-	TotalHours   int    `json:"total_hours"`
-	UserActivity any    `json:"user_activity,omitempty"`
+type UserActivity struct {
+	Login        string  `db:"login" json:"id"`
+	TotalHours   float32 `db:"total_hours" json:"total_hours"`
+	UserActivity any     `json:"user_activity,omitempty"`
 }
 
 type UserActivityByMonth struct {
-	Year  string `db:"year"`
-	Month string `db:"month_name"`
-	Hours int    `db:"hours"`
+	Year        string  `db:"year" json:"year"`
+	MonthNumber string  `db:"month_number" json:"month_num"`
+	Hours       float32 `db:"hours" json:"hours"`
 }
 
 type UserActivityByDate struct {
-	Date  time.Time `db:"date"`
-	Hours int       `db:"hours"`
+	Date  time.Time `db:"date" json:"date"`
+	Hours float32   `db:"hours" json:"hours"`
 }

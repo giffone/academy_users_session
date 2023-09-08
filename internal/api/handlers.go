@@ -90,13 +90,14 @@ func (h *handlers) CreateSession(c echo.Context) error {
 	}
 
 	// validate data
-	if err := req.Validate(); err != nil {
+	dto, err := req.Validate()
+	if err != nil {
 		c.Set(logErr, fmt.Sprintf("CreateSession: validate: %s", err))
 		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// create session
-	if sess, err := h.svc.CreateSession(c.Request().Context(), &req); err != nil {
+	if sess, err := h.svc.CreateSession(c.Request().Context(), dto); err != nil {
 		c.Set(logErr, fmt.Sprintf("CreateSession: %s", err))
 		return customErrResponse(c, err, sess)
 	}
@@ -118,13 +119,14 @@ func (h *handlers) CreateActivity(c echo.Context) error {
 	}
 
 	// validate data
-	if err := req.Validate(); err != nil {
+	dto, err := req.Validate()
+	if err != nil {
 		c.Set(logErr, fmt.Sprintf("CreateActivity: validate: %s", err))
 		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
 	// create activity
-	if err := h.svc.CreateActivity(c.Request().Context(), &req); err != nil {
+	if err := h.svc.CreateActivity(c.Request().Context(), dto); err != nil {
 		c.Set(logErr, fmt.Sprintf("CreateActivity: %s", err))
 		return customErrResponse(c, err, nil)
 	}
@@ -161,12 +163,13 @@ func (h *handlers) GetUserActivity(c echo.Context) (err error) {
 	}
 
 	// validate data
-	if err := req.Validate(); err != nil {
+	dto, err := req.Validate()
+	if err != nil {
 		c.Set(logErr, fmt.Sprintf("GetUserActivity: validate: %s", err))
 		return c.JSON(http.StatusBadRequest, response.Data{Message: err.Error()})
 	}
 
-	activity, err := h.svc.GetUserActivity(c.Request().Context(), &req)
+	activity, err := h.svc.GetUserActivity(c.Request().Context(), dto)
 	if err != nil {
 		c.Set(logErr, fmt.Sprintf("GetUserActivity: %s", err))
 		return c.JSON(http.StatusInternalServerError, response.Data{Message: err.Error()})

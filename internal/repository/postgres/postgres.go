@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"session_manager/internal/domain"
 	"session_manager/internal/domain/request"
 	"session_manager/internal/domain/response"
 	"time"
@@ -18,12 +20,12 @@ import (
 type Storage interface {
 	CreateUsers(ctx context.Context, req []request.User) (err error)
 	CreateComputers(ctx context.Context, req []request.Computer) (err error)
-	CreateSession(ctx context.Context, sess *request.Session) error
-	CreateActivity(ctx context.Context, ps *request.Activity) error
+	CreateSession(ctx context.Context, dto *domain.Session) error
+	CreateActivity(ctx context.Context, dto *domain.Activity) error
 	GetOnlineDashboard(ctx context.Context) ([]response.Session, error)
 	IsSessionExists(ctx context.Context, login string) ([]response.Session, error)
-	GetUserActivityByMonth(ctx context.Context, req *request.UserActivity) (*response.Activity, error)
-	GetUserActivityByDate(ctx context.Context, req *request.UserActivity) (*response.Activity, error)
+	GetUserActivityByMonth(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error)
+	GetUserActivityByDate(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error)
 }
 
 func NewStorage(pool *pgxpool.Pool) Storage {
@@ -99,7 +101,7 @@ func (s *storage) CreateComputers(ctx context.Context, req []request.Computer) (
 	return err
 }
 
-func (s *storage) CreateSession(ctx context.Context, req *request.Session) error {
+func (s *storage) CreateSession(ctx context.Context, dto *domain.Session) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -107,13 +109,13 @@ func (s *storage) CreateSession(ctx context.Context, req *request.Session) error
 	if _, err := s.pool.Exec(ctx, `INSERT INTO 
 		sessions (id, comp_name, ip_addr, login, next_ping_sec, start_date_time, end_date_time) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7);`,
-		req.ID,
-		req.ComputerName,
-		req.IPAddress,
-		req.Login,
-		req.NextPingSeconds,
-		req.DateTime,
-		req.DateTime.Add(time.Duration(req.NextPingSeconds)*time.Second),
+		dto.ID,
+		dto.ComputerName,
+		dto.IPAddress,
+		dto.Login,
+		int(dto.NextPing.Seconds()),
+		dto.StartDateTime,
+		dto.EndDateTime,
 	); err != nil {
 		return customErr("exec", err)
 	}
@@ -121,7 +123,7 @@ func (s *storage) CreateSession(ctx context.Context, req *request.Session) error
 	return nil
 }
 
-func (s *storage) CreateActivity(ctx context.Context, req *request.Activity) error {
+func (s *storage) CreateActivity(ctx context.Context, dto *domain.Activity) error {
 	ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
@@ -129,14 +131,11 @@ func (s *storage) CreateActivity(ctx context.Context, req *request.Activity) err
 	SET end_date_time = $1
 	WHERE id = $2;`
 
-	end_date_time := req.DateTime.Add(time.Duration(req.NextPingSeconds) * time.Second)
-
 	// -------------- if only session
-	if req.SessionType == "" {
-		log.Printf("time is %v\n", end_date_time)
+	if dto.SessionType == "" {
 		if tag, err := s.pool.Exec(ctx2, updateSessionEndQuery,
-			end_date_time,
-			req.SessionID,
+			dto.EndDateTime,
+			dto.SessionID,
 		); err != nil {
 			return customErr("session: exec: update", err)
 		} else if tag.RowsAffected() == 0 {
@@ -163,19 +162,19 @@ func (s *storage) CreateActivity(ctx context.Context, req *request.Activity) err
 			ON CONFLICT (session_id, session_type)
 			DO UPDATE SET
 			end_date_time = EXCLUDED.end_date_time;`,
-		req.SessionID,
-		req.SessionType,
-		req.Login,
-		req.DateTime,
-		end_date_time,
+		dto.SessionID,
+		dto.SessionType,
+		dto.Login,
+		dto.StartDateTime,
+		dto.EndDateTime,
 	); err != nil {
 		return customErr("activity: exec: insert", err)
 	}
 
 	// also update session end_date_time
 	if tag, err := tx.Exec(ctx2, updateSessionEndQuery,
-		end_date_time,
-		req.SessionID,
+		dto.EndDateTime,
+		dto.SessionID,
 	); err != nil {
 		return customErr("activity: exec: update", err)
 	} else if tag.RowsAffected() == 0 {
@@ -228,28 +227,72 @@ func (s *storage) GetOnlineDashboard(ctx context.Context) ([]response.Session, e
 	return sessions, nil
 }
 
-func (s *storage) GetUserActivityByMonth(ctx context.Context, req *request.UserActivity) (*response.Activity, error) {
+func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	rows, err := s.pool.Query(ctx,
-		`SELECT login, EXTRACT(YEAR FROM start_date_time) AS year,
-			TO_CHAR(start_date_time, 'Month') AS month_name,
-			EXTRACT(MONTH FROM start_date_time) AS month_number,
-			SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours
-			SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
-		FROM activity
-		WHERE login = $1
-			AND session_type = $2
-			AND DATE_TRUNC('day', start_date_time) >= $3::date
-			AND DATE_TRUNC('day', end_date_time) <= $4::date
-		GROUP BY login, year, month_name, month_number
-		ORDER BY year, month_number;`,
-		req.Login,
-		req.SessionType,
-		req.FromDate,
-		req.ToDate,
-	)
+	var rows pgx.Rows
+	var err error
+
+	if dto.SessionType != "" {
+		// from activity
+		rows, err = s.pool.Query(ctx,
+			`WITH monthly_hours AS (
+				SELECT
+					login,
+					EXTRACT(YEAR FROM start_date_time) AS year,
+					EXTRACT(MONTH FROM start_date_time) AS month_number,
+					EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600 AS hours_calc
+				FROM sessions
+				WHERE
+					login = $1
+					AND session_type = $2
+					AND DATE_TRUNC('day', start_date_time) >= $3::date
+					AND DATE_TRUNC('day', end_date_time) <= $4::date
+			)
+			SELECT 
+				login,
+				year,
+				month_number,
+				SUM(hours_calc) AS total_hours,
+				SUM(SUM(hours_calc)) OVER (PARTITION BY login) AS total_hours
+			FROM monthly_hours
+			GROUP BY login, year, month_number
+			ORDER BY year DESC, month_number DESC;`,
+			dto.Login,
+			dto.SessionType,
+			dto.FromDate,
+			dto.ToDate,
+		)
+	} else {
+		// from session
+		rows, err = s.pool.Query(ctx,
+			`WITH monthly_hours AS (
+				SELECT
+					login,
+					EXTRACT(YEAR FROM start_date_time) AS year,
+					EXTRACT(MONTH FROM start_date_time) AS month_number,
+					EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600 AS hours_calc
+				FROM sessions
+				WHERE
+					login = $1
+					AND DATE_TRUNC('day', start_date_time) >= $2::date
+					AND DATE_TRUNC('day', end_date_time) <= $3::date
+			)
+			SELECT 
+				login,
+				year,
+				month_number,
+				SUM(hours_calc) AS total_hours,
+				SUM(SUM(hours_calc)) OVER (PARTITION BY login) AS total_hours
+			FROM monthly_hours
+			GROUP BY login, year, month_number
+			ORDER BY year DESC, month_number DESC;`,
+			dto.Login,
+			dto.FromDate,
+			dto.ToDate,
+		)
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
@@ -258,7 +301,7 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, req *request.UserA
 	defer rows.Close()
 
 	activities := make([]response.UserActivityByMonth, 0, 36)
-	var totalHours int
+	var totalHours float64
 	var login string
 
 	for rows.Next() {
@@ -266,7 +309,7 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, req *request.UserA
 		if err := rows.Scan(
 			&login,
 			&activity.Year,
-			&activity.Month,
+			&activity.MonthNumber,
 			&activity.Hours,
 			&totalHours,
 		); err != nil {
@@ -279,33 +322,58 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, req *request.UserA
 		return nil, fmt.Errorf("rows at all: %w", err)
 	}
 
-	return &response.Activity{
+	return &response.UserActivity{
 		Login:        login,
-		TotalHours:   totalHours,
+		TotalHours:   float32(math.Round(totalHours*100) / 100),
 		UserActivity: activities,
 	}, nil
 }
 
-func (s *storage) GetUserActivityByDate(ctx context.Context, req *request.UserActivity) (*response.Activity, error) {
+func (s *storage) GetUserActivityByDate(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	rows, err := s.pool.Query(ctx,
-		`SELECT login, DATE_TRUNC('day', start_date_time) AS date,
-			SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours
-			SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
-		FROM activity
-		WHERE login = $1
-			AND session_type = $2
-			AND DATE_TRUNC('day', start_date_time) >= $3::date
-			AND DATE_TRUNC('day', end_date_time) <= $4::date
-		GROUP BY login, date
-		ORDER BY date;`,
-		req.Login,
-		req.SessionType,
-		req.FromDate,
-		req.ToDate,
-	)
+	var rows pgx.Rows
+	var err error
+	if dto.SessionType != "" {
+		rows, err = s.pool.Query(ctx,
+			`SELECT
+				login,
+				DATE_TRUNC('day', start_date_time) AS date,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
+			FROM activity
+			WHERE
+				login = $1
+				AND session_type = $2
+				AND DATE_TRUNC('day', start_date_time) >= $3::date
+				AND DATE_TRUNC('day', end_date_time) <= $4::date
+			GROUP BY login, date, start_date_time, end_date_time
+			ORDER BY date;`,
+			dto.Login,
+			dto.SessionType,
+			dto.FromDate,
+			dto.ToDate,
+		)
+	} else {
+		rows, err = s.pool.Query(ctx,
+			`SELECT
+				login,
+				DATE_TRUNC('day', start_date_time) AS date,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
+			FROM sessions
+			WHERE
+				login = $1
+				AND DATE_TRUNC('day', start_date_time) >= $2::date
+				AND DATE_TRUNC('day', end_date_time) <= $3::date
+			GROUP BY login, date, start_date_time, end_date_time
+			ORDER BY date;`,
+			dto.Login,
+			dto.FromDate,
+			dto.ToDate,
+		)
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
@@ -313,7 +381,7 @@ func (s *storage) GetUserActivityByDate(ctx context.Context, req *request.UserAc
 	defer rows.Close()
 
 	activities := make([]response.UserActivityByDate, 0, 360)
-	var totalHours int
+	var totalHours float64
 	var login string
 
 	for rows.Next() {
@@ -333,9 +401,9 @@ func (s *storage) GetUserActivityByDate(ctx context.Context, req *request.UserAc
 		return nil, fmt.Errorf("rows at all: %w", err)
 	}
 
-	return &response.Activity{
+	return &response.UserActivity{
 		Login:        login,
-		TotalHours:   totalHours,
+		TotalHours:   float32(math.Round(totalHours*100) / 100),
 		UserActivity: activities,
 	}, nil
 }
