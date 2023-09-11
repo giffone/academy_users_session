@@ -9,8 +9,8 @@ migrate:
 build:
 	docker build -t $(DOCKER_IMAGE_NAME) .
 
-run: migrate build
+run: build
 	docker run -e DATABASE_URL="$(DATABASE_URL)" -p 9090:8080 $(DOCKER_IMAGE_NAME)
 
-run_local: migrate build
+run_local: build
 	docker run -e DATABASE_URL="$(DATABASE_URL)" --network=host -p 9090:8080 $(DOCKER_IMAGE_NAME)

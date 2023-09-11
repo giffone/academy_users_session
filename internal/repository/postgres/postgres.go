@@ -50,7 +50,7 @@ func (s *storage) CreateUsers(ctx context.Context, req []request.User) (err erro
 		if user.Name == "" {
 			continue
 		}
-		batch.Queue(`INSERT INTO users (login) 
+		batch.Queue(`INSERT INTO public.users (login) 
 		VALUES ($1) 
 		ON CONFLICT (login) DO NOTHING`,
 			user.Name,
@@ -79,7 +79,7 @@ func (s *storage) CreateComputers(ctx context.Context, req []request.Computer) (
 		if computer.Name == "" {
 			continue
 		}
-		batch.Queue(`INSERT INTO computers (comp_name) 
+		batch.Queue(`INSERT INTO session.computers (comp_name) 
 		VALUES ($1) 
 		ON CONFLICT (comp_name) DO NOTHING`,
 			computer.Name,
@@ -107,7 +107,7 @@ func (s *storage) CreateSession(ctx context.Context, dto *domain.Session) error 
 
 	// start session
 	if _, err := s.pool.Exec(ctx, `INSERT INTO 
-		sessions (id, comp_name, ip_addr, login, next_ping_sec, start_date_time, end_date_time) 
+		session.in_campus (id, comp_name, ip_addr, login, next_ping_sec, start_date_time, end_date_time) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7);`,
 		dto.ID,
 		dto.ComputerName,
@@ -127,7 +127,7 @@ func (s *storage) CreateActivity(ctx context.Context, dto *domain.Activity) erro
 	ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	updateSessionEndQuery := `UPDATE sessions 
+	updateSessionEndQuery := `UPDATE session.in_campus
 	SET end_date_time = $1
 	WHERE id = $2;`
 
@@ -157,7 +157,7 @@ func (s *storage) CreateActivity(ctx context.Context, dto *domain.Activity) erro
 
 	// start activity
 	if _, err := tx.Exec(ctx2,
-		`INSERT INTO activity (session_id, session_type, login, start_date_time, end_date_time)
+		`INSERT INTO session.activity (session_id, session_type, login, start_date_time, end_date_time)
 			VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (session_id, session_type)
 			DO UPDATE SET
@@ -195,7 +195,7 @@ func (s *storage) GetOnlineDashboard(ctx context.Context) ([]response.Session, e
 
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, comp_name, ip_addr, login, start_date_time, end_date_time
-		FROM sessions
+		FROM session.in_campus
 		WHERE end_date_time >= NOW();`,
 	)
 	if err != nil {
@@ -243,7 +243,7 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 					EXTRACT(YEAR FROM start_date_time) AS year,
 					EXTRACT(MONTH FROM start_date_time) AS month_number,
 					EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600 AS hours_calc
-				FROM sessions
+				FROM session.activity
 				WHERE
 					login = $1
 					AND session_type = $2
@@ -265,7 +265,7 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 			dto.ToDate,
 		)
 	} else {
-		// from session
+		// from in_campus
 		rows, err = s.pool.Query(ctx,
 			`WITH monthly_hours AS (
 				SELECT
@@ -273,7 +273,7 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 					EXTRACT(YEAR FROM start_date_time) AS year,
 					EXTRACT(MONTH FROM start_date_time) AS month_number,
 					EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600 AS hours_calc
-				FROM sessions
+				FROM session.in_campus
 				WHERE
 					login = $1
 					AND DATE_TRUNC('day', start_date_time) >= $2::date
@@ -336,13 +336,14 @@ func (s *storage) GetUserActivityByDate(ctx context.Context, dto *domain.UserAct
 	var rows pgx.Rows
 	var err error
 	if dto.SessionType != "" {
+		// from activity
 		rows, err = s.pool.Query(ctx,
 			`SELECT
 				login,
 				DATE_TRUNC('day', start_date_time) AS date,
 				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
 				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
-			FROM activity
+			FROM session.activity
 			WHERE
 				login = $1
 				AND session_type = $2
@@ -356,13 +357,14 @@ func (s *storage) GetUserActivityByDate(ctx context.Context, dto *domain.UserAct
 			dto.ToDate,
 		)
 	} else {
+		// from in_campus
 		rows, err = s.pool.Query(ctx,
 			`SELECT
 				login,
 				DATE_TRUNC('day', start_date_time) AS date,
 				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
 				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
-			FROM sessions
+			FROM session.in_campus
 			WHERE
 				login = $1
 				AND DATE_TRUNC('day', start_date_time) >= $2::date
@@ -413,7 +415,7 @@ func (s *storage) IsSessionExists(ctx context.Context, login string) ([]response
 	defer cancel()
 
 	query := fmt.Sprintf(`SELECT id, comp_name, ip_addr, login, start_date_time, end_date_time
-	FROM sessions
+	FROM session.in_campus
 	WHERE login = $1
 		AND end_date_time >= (NOW() - INTERVAL '%d seconds');`, minusNSeconds)
 
