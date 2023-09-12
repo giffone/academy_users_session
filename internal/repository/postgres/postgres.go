@@ -457,6 +457,9 @@ func customErr(message string, err error) error {
 		if pgErr.Code == pgerrcode.UniqueViolation {
 			return &response.ErrDuplicateKey
 		}
+		if pgErr.Code == pgerrcode.ForeignKeyViolation {
+			return &response.ErrForeignKey
+		}
 		if pgErr.Code == pgerrcode.RaiseException {
 			if pgErr.Message == response.ErrEndStartDate.Error() {
 				return &response.ErrEndStartDate
