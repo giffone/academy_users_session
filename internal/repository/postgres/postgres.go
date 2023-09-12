@@ -139,7 +139,7 @@ func (s *storage) CreateActivity(ctx context.Context, dto *domain.Activity) erro
 		); err != nil {
 			return customErr("session: exec: update", err)
 		} else if tag.RowsAffected() == 0 {
-			return &response.ErrNotFound
+			return response.ErrNotFound
 		}
 		return nil
 	}
@@ -178,7 +178,7 @@ func (s *storage) CreateActivity(ctx context.Context, dto *domain.Activity) erro
 	); err != nil {
 		return customErr("activity: exec: update", err)
 	} else if tag.RowsAffected() == 0 {
-		return &response.ErrNotFound
+		return response.ErrNotFound
 	}
 
 	err = tx.Commit(ctx)
@@ -455,17 +455,17 @@ func (s *storage) IsSessionExists(ctx context.Context, login string) ([]response
 func customErr(message string, err error) error {
 	if pgErr, ok := err.(*pgconn.PgError); ok {
 		if pgErr.Code == pgerrcode.UniqueViolation {
-			return &response.ErrDuplicateKey
+			return response.ErrDuplicateKey
 		}
 		if pgErr.Code == pgerrcode.ForeignKeyViolation {
-			return &response.ErrForeignKey
+			return response.ErrForeignKey
 		}
 		if pgErr.Code == pgerrcode.RaiseException {
 			if pgErr.Message == response.ErrEndStartDate.Error() {
-				return &response.ErrEndStartDate
+				return response.ErrEndStartDate
 			}
 			if pgErr.Message == response.ErrEndEndDate.Error() {
-				return &response.ErrEndEndDate
+				return response.ErrEndEndDate
 			}
 		}
 	}
