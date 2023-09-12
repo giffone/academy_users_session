@@ -25,7 +25,9 @@ type Storage interface {
 	GetOnlineDashboard(ctx context.Context) ([]response.Session, error)
 	IsSessionExists(ctx context.Context, login string) ([]response.Session, error)
 	GetUserActivityByMonth(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error)
+	GetUserActivityByMonthInCampus(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error)
 	GetUserActivityByDate(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error)
+	GetUserActivityByDateInCampus(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error)
 }
 
 func NewStorage(pool *pgxpool.Pool) Storage {
@@ -231,13 +233,8 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	var rows pgx.Rows
-	var err error
-
-	if dto.SessionType != "" {
-		// from activity
-		rows, err = s.pool.Query(ctx,
-			`WITH monthly_hours AS (
+	rows, err := s.pool.Query(ctx,
+		`WITH monthly_hours AS (
 				SELECT
 					login,
 					EXTRACT(YEAR FROM start_date_time) AS year,
@@ -259,15 +256,27 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 			FROM monthly_hours
 			GROUP BY login, year, month_number
 			ORDER BY year DESC, month_number DESC;`,
-			dto.Login,
-			dto.SessionType,
-			dto.FromDate,
-			dto.ToDate,
-		)
-	} else {
-		// from in_campus
-		rows, err = s.pool.Query(ctx,
-			`WITH monthly_hours AS (
+		dto.Login,
+		dto.SessionType,
+		dto.FromDate,
+		dto.ToDate,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+
+	defer rows.Close()
+
+	return iterateRowsActivityByMonth(rows)
+}
+
+func (s *storage) GetUserActivityByMonthInCampus(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx,
+		`WITH monthly_hours AS (
 				SELECT
 					login,
 					EXTRACT(YEAR FROM start_date_time) AS year,
@@ -288,11 +297,10 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 			FROM monthly_hours
 			GROUP BY login, year, month_number
 			ORDER BY year DESC, month_number DESC;`,
-			dto.Login,
-			dto.FromDate,
-			dto.ToDate,
-		)
-	}
+		dto.Login,
+		dto.FromDate,
+		dto.ToDate,
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
@@ -300,6 +308,74 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 
 	defer rows.Close()
 
+	return iterateRowsActivityByMonth(rows)
+}
+
+func (s *storage) GetUserActivityByDate(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx,
+		`SELECT
+				login,
+				DATE_TRUNC('day', start_date_time) AS date,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
+			FROM session.activity
+			WHERE
+				login = $1
+				AND session_type = $2
+				AND DATE_TRUNC('day', start_date_time) >= $3::date
+				AND DATE_TRUNC('day', end_date_time) <= $4::date
+			GROUP BY login, date, start_date_time, end_date_time
+			ORDER BY date;`,
+		dto.Login,
+		dto.SessionType,
+		dto.FromDate,
+		dto.ToDate,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+
+	defer rows.Close()
+
+	return iterateRowsActivityByDate(rows)
+}
+
+func (s *storage) GetUserActivityByDateInCampus(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx,
+		`SELECT
+				login,
+				DATE_TRUNC('day', start_date_time) AS date,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
+				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
+			FROM session.in_campus
+			WHERE
+				login = $1
+				AND DATE_TRUNC('day', start_date_time) >= $2::date
+				AND DATE_TRUNC('day', end_date_time) <= $3::date
+			GROUP BY login, date, start_date_time, end_date_time
+			ORDER BY date;`,
+		dto.Login,
+		dto.FromDate,
+		dto.ToDate,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+
+	defer rows.Close()
+
+	return iterateRowsActivityByDate(rows)
+}
+
+func iterateRowsActivityByMonth(rows pgx.Rows) (*response.UserActivity, error) {
 	activities := make([]response.UserActivityByMonth, 0, 36)
 	var totalHours float64
 	var login string
@@ -318,7 +394,7 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 		activities = append(activities, activity)
 	}
 
-	if err = rows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows at all: %w", err)
 	}
 
@@ -329,59 +405,7 @@ func (s *storage) GetUserActivityByMonth(ctx context.Context, dto *domain.UserAc
 	}, nil
 }
 
-func (s *storage) GetUserActivityByDate(ctx context.Context, dto *domain.UserActivity) (*response.UserActivity, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	var rows pgx.Rows
-	var err error
-	if dto.SessionType != "" {
-		// from activity
-		rows, err = s.pool.Query(ctx,
-			`SELECT
-				login,
-				DATE_TRUNC('day', start_date_time) AS date,
-				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
-				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
-			FROM session.activity
-			WHERE
-				login = $1
-				AND session_type = $2
-				AND DATE_TRUNC('day', start_date_time) >= $3::date
-				AND DATE_TRUNC('day', end_date_time) <= $4::date
-			GROUP BY login, date, start_date_time, end_date_time
-			ORDER BY date;`,
-			dto.Login,
-			dto.SessionType,
-			dto.FromDate,
-			dto.ToDate,
-		)
-	} else {
-		// from in_campus
-		rows, err = s.pool.Query(ctx,
-			`SELECT
-				login,
-				DATE_TRUNC('day', start_date_time) AS date,
-				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) AS hours,
-				SUM(EXTRACT(EPOCH FROM (end_date_time - start_date_time)) / 3600) OVER (PARTITION BY login) AS total_hours
-			FROM session.in_campus
-			WHERE
-				login = $1
-				AND DATE_TRUNC('day', start_date_time) >= $2::date
-				AND DATE_TRUNC('day', end_date_time) <= $3::date
-			GROUP BY login, date, start_date_time, end_date_time
-			ORDER BY date;`,
-			dto.Login,
-			dto.FromDate,
-			dto.ToDate,
-		)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("query: %w", err)
-	}
-	defer rows.Close()
-
+func iterateRowsActivityByDate(rows pgx.Rows) (*response.UserActivity, error) {
 	activities := make([]response.UserActivityByDate, 0, 360)
 	var totalHours float64
 	var login string
@@ -399,7 +423,7 @@ func (s *storage) GetUserActivityByDate(ctx context.Context, dto *domain.UserAct
 		activities = append(activities, activity)
 	}
 
-	if err = rows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows at all: %w", err)
 	}
 

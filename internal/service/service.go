@@ -56,8 +56,18 @@ func (s *service) GetOnlineDashboard(ctx context.Context) ([]response.Session, e
 
 func (s *service) GetUserActivity(ctx context.Context, dto *domain.UserActivity) (activity *response.UserActivity, err error) {
 	if dto.GroupBy == request.GroupByMonth {
+		if dto.SessionType == "" {
+			// no need sort - get from main table in_campus
+			return s.storage.GetUserActivityByMonthInCampus(ctx, dto)
+		}
+		// need sort
 		return s.storage.GetUserActivityByMonth(ctx, dto)
 	}
 
+	if dto.SessionType == "" {
+		// no need sort - get from main table in_campus
+		return s.storage.GetUserActivityByDateInCampus(ctx, dto)
+	}
+	// need sort
 	return s.storage.GetUserActivityByDate(ctx, dto)
 }
